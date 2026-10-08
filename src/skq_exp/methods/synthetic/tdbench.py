@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
-import subprocess
 import sys
 import time
 import types
@@ -19,6 +18,7 @@ from typing import Any
 import numpy as np
 
 from ..contracts import exact_budget_size
+from ..native.common import verify_locked_repo
 from .result import GeneratedDatasetResult
 
 
@@ -36,7 +36,12 @@ class TDBenchGenerator:
             return GeneratedDatasetResult.failure(
                 self.method_id, "blocked", requested, f"Thiếu repo TDBench: {repo}"
             )
-        commit = _git_commit(repo)
+        try:
+            commit = verify_locked_repo(repo)
+        except RuntimeError as error:
+            return GeneratedDatasetResult.failure(
+                self.method_id, "blocked", requested, str(error)
+            )
         max_rows = int(self.options.get("max_rows", 500))
         if requested > max_rows:
             return GeneratedDatasetResult.failure(
@@ -94,6 +99,18 @@ class TDBenchGenerator:
             )
         X_syn = np.asarray(X_syn, dtype=np.float32)
         y_syn = np.asarray(y_syn, dtype=np.int64)
+        if (
+            X_syn.ndim != 2 or y_syn.ndim != 1 or len(X_syn) != len(y_syn)
+            or X_syn.shape[1] != X_train.shape[1] or len(X_syn) == 0
+            or not np.isfinite(X_syn).all()
+            or not set(np.unique(y_syn).tolist()) <= set(labels.tolist())
+            or set(np.unique(y_syn).tolist()) != set(labels.tolist())
+        ):
+            return GeneratedDatasetResult.failure(
+                self.method_id, "failed", requested,
+                "TDBench output vi phạm shape/finite/label coverage contract",
+            )
+        elapsed = time.perf_counter() - started
         return GeneratedDatasetResult(
             X=X_syn,
             y=y_syn,
@@ -109,17 +126,8 @@ class TDBenchGenerator:
                 "class_counts": {str(int(v)): int(np.sum(y_syn == v)) for v in np.unique(y_syn)},
                 "storage_bytes_float32": int(X_syn.astype(np.float32).nbytes + y_syn.nbytes),
             },
-            timings={"generate": time.perf_counter() - started, "total": time.perf_counter() - started},
+            timings={"generate": elapsed, "total": elapsed},
         )
-
-
-def _git_commit(repo: Path) -> str | None:
-    try:
-        return subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], cwd=repo, text=True, stderr=subprocess.DEVNULL
-        ).strip()
-    except Exception:
-        return None
 
 
 def _load_distill_module(repo: Path, module_name: str):

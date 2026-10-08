@@ -18,11 +18,11 @@ from sklearn.metrics import pairwise_distances
 from ..base import BaseSelector
 from ..contracts import exact_budget_size
 from ..result import SelectionResult
-from .common import git_commit
+from .common import verify_locked_repo
 
 
 class CRAIGNativeSelector(BaseSelector):
-    method_id = "n_craig_native"
+    method_id = "a_craig_feature_space"
 
     def __init__(self, repo_root: Path, seed: int, options: dict[str, Any] | None = None):
         super().__init__(seed)
@@ -34,6 +34,10 @@ class CRAIGNativeSelector(BaseSelector):
         source = self.repo / "lazy_greedy.py"
         if not source.exists():
             return SelectionResult.failure(self.method_id, "blocked", requested, f"Thiếu repo: {self.repo}")
+        try:
+            upstream_commit = verify_locked_repo(self.repo)
+        except RuntimeError as error:
+            return SelectionResult.failure(self.method_id, "blocked", requested, str(error))
         guard = kwargs.get("resource_guard")
         started = time.perf_counter()
         try:
@@ -69,9 +73,10 @@ class CRAIGNativeSelector(BaseSelector):
             realized_rows=len(indices), budget_mode="native_realized", method_id=self.method_id,
             diagnostics={
                 "upstream_repo": "https://github.com/baharanm/craig.git",
-                "upstream_commit": git_commit(self.repo),
-                "reference_equivalent": True,
-                "pipeline": "repo logistic feature-space classwise facility location",
+                "upstream_commit": upstream_commit,
+                "reference_equivalent": False,
+                "fidelity_tier": "R1_selection_stage_adaptation",
+                "pipeline": "feature-space classwise facility location using upstream lazy greedy",
                 "class_quotas_ceil": quotas.tolist(),
             },
             timings={"select": elapsed, "total": elapsed},

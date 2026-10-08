@@ -14,7 +14,7 @@ import numpy as np
 from ..base import BaseSelector
 from ..contracts import BudgetInfeasibleError, exact_budget_size, validate_exact_selection
 from ..result import SelectionResult
-from .allocation import allocate_groups, make_group_ids
+from .allocation import allocate_classwise
 from .herding import kernel_herding
 from .rff import RBFRandomFeatures
 from .simplex_qp import solve_simplex_mean_match
@@ -62,7 +62,6 @@ class StructuredKQuadSelector(BaseSelector):
                 "Budget nhỏ hơn số lớp nên không thể bảo đảm class coverage",
             )
         row_ids = np.arange(len(y_train), dtype=np.int64) if row_ids is None else np.asarray(row_ids)
-        group_ids = make_group_ids(parent_ids, y_train)
         candidate_mask = (
             np.ones(len(y_train), dtype=bool)
             if candidate_mask is None else np.asarray(candidate_mask, dtype=bool)
@@ -75,11 +74,12 @@ class StructuredKQuadSelector(BaseSelector):
                 "Candidate pool nhỏ hơn exact budget",
             )
         try:
-            groups, capacities, initial_quotas = allocate_groups(group_ids, requested)
-            candidate_capacities = np.asarray([
-                np.sum((group_ids == group) & candidate_mask) for group in groups
-            ], dtype=np.int64)
-            quotas = _cap_and_redistribute(initial_quotas, candidate_capacities, capacities, requested)
+            allocation = allocate_classwise(parent_ids, y_train, candidate_mask, requested)
+            group_ids = allocation.group_ids
+            groups = allocation.groups
+            capacities = allocation.population_capacities
+            candidate_capacities = allocation.candidate_capacities
+            quotas = allocation.quotas
         except BudgetInfeasibleError as error:
             return SelectionResult.failure(
                 self.method_id, "budget_infeasible", requested, str(error)
@@ -93,6 +93,11 @@ class StructuredKQuadSelector(BaseSelector):
         )
         check = resource_guard.check if resource_guard is not None else None
         Z = rff.fit_transform(np.asarray(X_train), check=check)
+        kernel_scale = float(np.sqrt(np.mean(np.sum(np.asarray(Z, dtype=np.float64) ** 2, axis=1))))
+        if not np.isfinite(kernel_scale) or kernel_scale <= 0:
+            raise ValueError("RFF block có train mean-squared norm không hợp lệ")
+        Z = Z / kernel_scale
+        query_scale = None
         if query_features is not None:
             query_features = np.asarray(query_features, dtype=np.float32)
             if query_features.ndim == 1:
@@ -100,9 +105,12 @@ class StructuredKQuadSelector(BaseSelector):
             if len(query_features) != len(y_train):
                 raise ValueError("query_features phải có một dòng cho mỗi train row")
             alpha = self.query_alpha
-            if not 0.0 <= alpha <= 1.0:
-                raise ValueError("query_alpha phải nằm trong [0,1]")
-            query_scaled = query_features / np.sqrt(max(1, query_features.shape[1]))
+            if alpha not in {0.25, 0.5, 0.75}:
+                raise ValueError("LRQ query_alpha phải thuộc {0.25, 0.50, 0.75}")
+            query_scale = float(np.sqrt(np.mean(np.sum(query_features.astype(np.float64) ** 2, axis=1))))
+            if not np.isfinite(query_scale) or query_scale <= 0:
+                raise ValueError("Query block có train mean-squared norm không hợp lệ")
+            query_scaled = query_features / query_scale
             Z = np.concatenate([
                 np.sqrt(alpha) * Z,
                 np.sqrt(1.0 - alpha) * query_scaled,
@@ -114,6 +122,8 @@ class StructuredKQuadSelector(BaseSelector):
         qp_objectives: list[float] = []
         qp_iterations: list[int] = []
         qp_converged = True
+        qp_sum_violations: list[float] = []
+        qp_min_weights: list[float] = []
         qp_solvers: list[str] = []
         herding_started = time.perf_counter()
         qp_time = 0.0
@@ -139,16 +149,22 @@ class StructuredKQuadSelector(BaseSelector):
                 qp_objectives.append(solution.objective)
                 qp_iterations.append(solution.iterations)
                 qp_converged = qp_converged and solution.converged
+                qp_sum_violations.append(solution.sum_violation)
+                qp_min_weights.append(solution.min_weight)
                 qp_solvers.append(solution.solver)
                 weight_parts.append(float(capacity) * solution.weights)
             else:
                 weight_parts.append(np.full(int(quota), float(capacity) / int(quota)))
         herding_time = time.perf_counter() - herding_started - qp_time
 
-        if self.use_qp and not qp_converged:
+        qp_constraints_valid = (
+            max(qp_sum_violations, default=0.0) <= 1e-8
+            and min(qp_min_weights, default=0.0) >= -1e-10
+        )
+        if self.use_qp and (not qp_converged or not qp_constraints_valid):
             return SelectionResult.failure(
                 self.method_id, "failed", requested,
-                "Simplex-QP không hội tụ; không dùng fallback",
+                "Simplex-QP không hội tụ hoặc vi phạm simplex tolerance; không dùng fallback",
             )
         indices = validate_exact_selection(
             np.concatenate(selected_parts), len(y_train), requested
@@ -159,6 +175,13 @@ class StructuredKQuadSelector(BaseSelector):
         for group, capacity in zip(groups, capacities):
             mask = group_ids[indices] == group
             mass_errors.append(abs(weights[mask].sum() - capacity) / max(1, int(capacity)))
+        max_mass_error = float(max(mass_errors, default=0.0))
+        total_mass_error = float(abs(weights.sum() - len(y_train)) / max(1, len(y_train)))
+        if max_mass_error > 1e-8 or total_mass_error > 1e-8:
+            return SelectionResult.failure(
+                self.method_id, "failed", requested,
+                "Trọng số không bảo toàn population mass sau coarsening",
+            )
         total_time = time.perf_counter() - started
         return SelectionResult(
             indices=indices,
@@ -169,12 +192,19 @@ class StructuredKQuadSelector(BaseSelector):
             method_id=self.method_id,
             diagnostics={
                 "n_groups": int(len(groups)),
+                **allocation.diagnostics,
                 "group_capacities": capacities.tolist(),
+                "group_candidate_capacities": candidate_capacities.tolist(),
                 "group_quotas": quotas.tolist(),
                 "class_coverage": float(class_coverage),
-                "max_mass_error": float(max(mass_errors, default=0.0)),
+                "max_mass_error": max_mass_error,
+                "total_mass_error": total_mass_error,
                 "rff_components": self.n_components,
                 "rff_sigma": rff.sigma_,
+                "rff_landmark_row_ids": row_ids[rff.landmark_indices_].astype(np.int64).tolist(),
+                "rff_dtype": str(Z.dtype),
+                "kernel_block_scale": kernel_scale,
+                "query_block_scale": query_scale,
                 "bandwidth_multiplier": self.bandwidth_multiplier,
                 "candidate_rows": int(candidate_mask.sum()),
                 "query_alpha": self.query_alpha if query_features is not None else None,
@@ -182,6 +212,9 @@ class StructuredKQuadSelector(BaseSelector):
                 "qp_objective_mean": float(np.mean(qp_objectives)) if qp_objectives else None,
                 "qp_iterations_max": max(qp_iterations, default=0),
                 "qp_converged": qp_converged if self.use_qp else None,
+                "qp_constraint_valid": qp_constraints_valid if self.use_qp else None,
+                "qp_max_sum_violation": max(qp_sum_violations, default=0.0) if self.use_qp else None,
+                "qp_min_weight": min(qp_min_weights, default=0.0) if self.use_qp else None,
                 "qp_solvers": sorted(set(qp_solvers)) if self.use_qp else None,
                 "normalized_ess": float(weights.sum() ** 2 / (len(weights) * np.sum(weights ** 2))),
             },
@@ -192,27 +225,4 @@ class StructuredKQuadSelector(BaseSelector):
                 "total": total_time,
             },
         )
-
-
-def _cap_and_redistribute(
-    quotas: np.ndarray,
-    candidate_capacities: np.ndarray,
-    population_capacities: np.ndarray,
-    total: int,
-) -> np.ndarray:
-    """Hạ quota nhóm thiếu candidate rồi phân phần dư cho nhóm còn chỗ."""
-    quotas = np.minimum(np.asarray(quotas, dtype=np.int64), candidate_capacities)
-    left = int(total - quotas.sum())
-    if left < 0:
-        raise BudgetInfeasibleError("Quota sau cap vượt budget")
-    while left:
-        available = candidate_capacities - quotas
-        eligible = np.flatnonzero(available > 0)
-        if len(eligible) == 0:
-            raise BudgetInfeasibleError("Candidate capacity không đủ exact budget")
-        scores = population_capacities[eligible] / np.maximum(1, quotas[eligible] + 1)
-        chosen = int(eligible[int(np.argmax(scores))])
-        quotas[chosen] += 1
-        left -= 1
-    return quotas
 

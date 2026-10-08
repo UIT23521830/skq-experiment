@@ -1,8 +1,10 @@
 {
-  "schema_version": 1,
+  "schema_version": 3,
   "experiment_id": "adult_quick_seed11_v1",
   "protocol_id": "static_tabular_quick_check_v1",
   "stage_id": "s1_screen",
+  "evidence_role": "integration_debug",
+  "split_id": "registered_split_v1",
   "dataset_ids": ["adult_uci2_v1"],
   "method_ids": ["c00_full_train", "d04_global_rff_quadrature"],
   "learner_ids": ["lr"],

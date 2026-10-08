@@ -17,7 +17,7 @@ import numpy as np
 from ..base import BaseSelector
 from ..contracts import exact_budget_size
 from ..result import SelectionResult
-from .common import git_commit
+from .common import verify_locked_repo
 
 
 class BDISNativeSelector(BaseSelector):
@@ -40,6 +40,10 @@ class BDISNativeSelector(BaseSelector):
                 self.method_id, "blocked", requested,
                 "Thiếu faiss-cpu; BDIS native không được thay bằng sklearn",
             )
+        try:
+            upstream_commit = verify_locked_repo(self.repo)
+        except RuntimeError as error:
+            return SelectionResult.failure(self.method_id, "blocked", requested, str(error))
         started = time.perf_counter()
         had_np_int = hasattr(np, "int")
         old_np_int = getattr(np, "int", None)
@@ -72,7 +76,7 @@ class BDISNativeSelector(BaseSelector):
             realized_rows=len(indices), budget_mode="native_realized", method_id=self.method_id,
             diagnostics={
                 "upstream_repo": "https://github.com/CQQXY161120/Instance-Selection.git",
-                "upstream_commit": git_commit(self.repo),
+                "upstream_commit": upstream_commit,
                 "reference_equivalent": True,
                 "compatibility_patch": "temporary numpy.int alias only",
                 "t1": int(self.options.get("t1", -1)), "t2": int(self.options.get("t2", 7)),

@@ -10,7 +10,7 @@ Từ thư mục project:
 
 ```powershell
 cd C:\source\paper\skq_experiment
-python -m pip install -e ".[boosting,deep,dev]"
+python -m pip install -e ".[boosting,deep,data,dev]"
 python scripts\fetch_official_repos.py
 pytest
 skq doctor
@@ -113,12 +113,13 @@ Trong config chạy, dùng:
 !skq fetch-data --dataset adult_uci2_v1 --config configs/pilot_adult_full_seed11.json
 !skq prepare --dataset adult_uci2_v1 --config configs/pilot_adult_full_seed11.json
 
-# 3. Quick check rồi full candidate matrix; cả hai vẫn chỉ dùng dev
+# 3. Quick check rồi candidate matrix; LRQ vẫn GATE_LOCKED trước dev freeze
 !skq run --config configs/pilot_adult_quick_seed11.json --selector-seed 11
 !skq run --config configs/pilot_adult_full_seed11.json --selector-seed 11 \
   --max-ram-gb 12 --timeout-seconds 7200 --max-threads 4
 
-# 4. Sau khi winner đã được freeze mới chạy confirmatory
+# 4. Sau dev screen, tạo freeze_manifest schema v3 theo docs/freeze_manifest.example.json.
+#    Chỉ sau đó P04/P05 và confirmatory mới được mở.
 !skq run --config configs/s2_confirm.json --dataset adult_uci2_v1
 
 # 5. Gom kết quả của những run đã hoàn thành
@@ -163,7 +164,8 @@ output của version trước làm input rồi giải nén sang `/kaggle/working
 ## 8. Repo đối chứng
 
 Các repo tác giả được khóa commit trong `external/official_repos.lock.json`.
-CoreTab, BDIS và CRAIG có adapter trực tiếp; AutoCoreset dùng driver environment
+CoreTab và BDIS có adapter native trực tiếp; CRAIG feature-space là adaptation R1.
+AutoCoreset dùng driver environment
 riêng; KIP/MTT giữ dependency nặng của TDBench. Output đều mang commit/provenance.
 
 Quy trình:

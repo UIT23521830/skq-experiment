@@ -4,5 +4,5 @@ Các script chỉ gọi API ở đây để cùng dùng một cách chia dữ li
 lưu kết quả. Phiên bản được ghi vào manifest để biết artifact sinh từ code nào.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 

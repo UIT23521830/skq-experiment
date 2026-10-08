@@ -17,7 +17,8 @@ for method theo thứ tự config:
     elif proposed:
         nạp parent structure đã sinh
         nếu P04/P05: tạo OOF query loss chỉ từ train
-        allocate exact quota → RFF → herding → simplex-QP
+        class quota → deterministic coarsening → exact group quota
+        → RFF → exact squared-distance herding → simplex-QP
     elif D05:
         giữ index của source method, tính lại weight đều theo nhóm
     for learner hợp contract:
@@ -36,20 +37,21 @@ aggregate; chỉ sau dev freeze mới được mở test
 | N01, N02 | hoàn tất và đã smoke Adult | Native subset cần binary target; đa lớp chỉ xuất structure và ghi NA |
 | BDIS | hoàn tất | `faiss-cpu`; nếu thiếu trả BLOCKED |
 | AutoCoreset | boundary + driver hoàn tất | environment riêng tạo artifact đúng fingerprint |
-| CRAIG | hoàn tất | pairwise preflight không vượt RAM/ops |
+| CRAIG feature-space | adaptation R1 | pairwise preflight không vượt RAM/ops; không claim native |
 | Gonzalez, Leverage | hoàn tất và đã smoke Adult | sklearn |
 | KIP-TDBench | adapter output riêng hoàn tất | JAX + neural-tangents và max_rows gate |
 | MTT-TDBench | adapter output riêng hoàn tất | PyTorch và max_rows gate |
 | P01, P02 | hoàn tất và đã smoke Adult | N01/N02 structure |
 | P03 | hoàn tất theo candidate-mask contract | BDIS phải qua gate và pool đủ budget |
-| P04, P05 | hoàn tất và đã smoke Adult | parent source + OOF query portfolio |
+| P04, P05 | code + gate hoàn tất | frozen base winner + OOF query portfolio; thiếu freeze trả GATE_LOCKED |
 | D02, D04, D05 | hoàn tất | D02 cần parent; D05 cần source selection cùng run |
 
 ## Không được tuyên bố quá mức
 
 - Pilot một seed trên dev chỉ là integration evidence.
-- P04/P05 trong config pilot dùng N02 tạm; paper phải dùng base winner đã freeze.
+- P04/P05 không chạy chỉ vì config pilot có N02; freeze phải xác nhận đúng base source.
 - Native CoreTab chạy ở realized size, không phải exact 5%.
 - Gonzalez/Leverage là benchmark reproduction, không gọi native paper.
-- BDIS/AutoCoreset/CRAIG/KIP/MTT chỉ vào bảng utility khi gate thật sự SUCCESS.
+- BDIS/AutoCoreset/KIP/MTT chỉ vào bảng utility khi gate thật sự SUCCESS.
+- `a_craig_feature_space` là adaptation, không nằm dưới nhãn native CRAIG.
 - Failure là một kết quả về khả năng tái hiện/chi phí, không được đổi method rồi giữ tên.

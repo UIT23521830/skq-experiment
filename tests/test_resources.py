@@ -21,7 +21,7 @@ def test_preflight_blocks_memory_heavy_run() -> None:
 
 def test_preflight_blocks_operation_heavy_run() -> None:
     estimate = estimate_selection_cost(
-        "n_craig_native", 1_000, 20, 1_000, rff_components=1, n_classes=10
+        "a_craig_feature_space", 1_000, 20, 1_000, rff_components=1, n_classes=10
     )
     with pytest.raises(ResourceLimitError) as caught:
         enforce_preflight(estimate, {"max_ram_gb": 128, "max_estimated_operations": 1e6})

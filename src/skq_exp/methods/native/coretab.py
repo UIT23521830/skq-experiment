@@ -19,7 +19,7 @@ import pandas as pd
 from ..base import BaseSelector
 from ..contracts import exact_budget_size
 from ..result import SelectionResult
-from .common import git_commit, prepend_sys_path
+from .common import prepend_sys_path, verify_locked_repo
 
 
 class CoreTabNativeSelector(BaseSelector):
@@ -36,6 +36,10 @@ class CoreTabNativeSelector(BaseSelector):
         requested = exact_budget_size(len(y_train), budget_ratio)
         if not (self.repo / "coretab" / "coreset_algorithms.py").exists():
             return SelectionResult.failure(self.method_id, "blocked", requested, f"Thiếu repo: {self.repo}")
+        try:
+            upstream_commit = verify_locked_repo(self.repo)
+        except RuntimeError as error:
+            return SelectionResult.failure(self.method_id, "blocked", requested, str(error))
         started = time.perf_counter()
         random.seed(self.seed)
         np.random.seed(self.seed)
@@ -53,7 +57,7 @@ class CoreTabNativeSelector(BaseSelector):
                     )
                     failure.timings = {"structure_only": elapsed, "total": elapsed}
                     failure.diagnostics.update({
-                        "upstream_commit": git_commit(self.repo),
+                        "upstream_commit": upstream_commit,
                         "structure_only": True,
                         "reference_equivalent_subset": False,
                     })
@@ -100,7 +104,7 @@ class CoreTabNativeSelector(BaseSelector):
             method_id=self.method_id,
             diagnostics={
                 "upstream_repo": "https://github.com/avivhadar33/coretab.git",
-                "upstream_commit": git_commit(self.repo),
+                "upstream_commit": upstream_commit,
                 "reference_equivalent": True,
                 "structure_groups": int(len(np.unique(parents))),
                 "requested_ratio": float(budget_ratio),

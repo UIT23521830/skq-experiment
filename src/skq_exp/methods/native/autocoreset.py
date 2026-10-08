@@ -16,7 +16,7 @@ import numpy as np
 from ..base import BaseSelector
 from ..contracts import exact_budget_size
 from ..result import SelectionResult
-from .common import git_commit
+from .common import verify_locked_repo
 
 
 class AutoCoresetNativeSelector(BaseSelector):
@@ -42,11 +42,26 @@ class AutoCoresetNativeSelector(BaseSelector):
             weights = np.load(artifact_dir / "weights.npy")
         except Exception as error:
             return SelectionResult.failure(self.method_id, "failed", requested, f"Artifact AutoCoreset lỗi: {error!r}")
-        expected_commit = git_commit(self.repo)
+        try:
+            expected_commit = verify_locked_repo(self.repo)
+        except RuntimeError as error:
+            return SelectionResult.failure(self.method_id, "blocked", requested, str(error))
         if manifest.get("upstream_commit") != expected_commit:
             return SelectionResult.failure(self.method_id, "blocked", requested, "Commit artifact AutoCoreset không khớp lock")
         if manifest.get("dataset_fingerprint") != self.options.get("dataset_fingerprint"):
             return SelectionResult.failure(self.method_id, "blocked", requested, "Fingerprint dữ liệu AutoCoreset không khớp")
+        indices = np.asarray(indices, dtype=np.int64)
+        weights = np.asarray(weights, dtype=np.float64)
+        if (
+            indices.ndim != 1 or len(indices) != len(weights)
+            or len(np.unique(indices)) != len(indices)
+            or (indices.size and (indices.min() < 0 or indices.max() >= len(y_train)))
+            or not np.isfinite(weights).all() or np.any(weights < 0) or weights.sum() <= 0
+        ):
+            return SelectionResult.failure(
+                self.method_id, "failed", requested,
+                "Artifact AutoCoreset vi phạm index/weight contract",
+            )
         return SelectionResult(
             indices=indices, weights=weights, requested_rows=requested,
             realized_rows=len(indices), budget_mode="native_realized", method_id=self.method_id,

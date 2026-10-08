@@ -22,6 +22,8 @@ def kernel_herding(
     if n_select <= 0 or n_select > len(Z):
         raise ValueError("n_select phải nằm trong [1, số dòng của nhóm]")
     target = np.asarray(Z, dtype=np.float64).mean(axis=0)
+    matrix = np.asarray(Z, dtype=np.float64)
+    squared_norms = np.einsum("ij,ij->i", matrix, matrix)
     running = np.zeros(Z.shape[1], dtype=np.float64)
     available = np.ones(len(Z), dtype=bool)
     selected: list[int] = []
@@ -30,7 +32,9 @@ def kernel_herding(
         if check is not None and step % 8 == 0:
             check("herding")
         desired = (step + 1) * target - running
-        scores = np.asarray(Z, dtype=np.float64) @ desired
+        # argmin ||running + z_j - (t+1)mu||^2 tương đương argmax biểu thức này.
+        # Hạng norm là bắt buộc vì RFF row norm không hoàn toàn không đổi.
+        scores = matrix @ desired - 0.5 * squared_norms
         scores[~available] = -np.inf
         best = np.max(scores)
         candidates = np.flatnonzero(np.isclose(scores, best, rtol=1e-12, atol=1e-12))

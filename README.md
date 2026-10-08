@@ -1,9 +1,9 @@
-# SKQ Experiment — code thực nghiệm độc lập
+# SKQ Experiment — execution repository có gate kiểm toán
 
 Project này hiện thực hóa ma trận thực nghiệm cho **Structured Kernel Quadrature
-(SKQ)** trên dữ liệu bảng. Đây là project mới, tách khỏi code nghiên cứu cũ. Một
-người không có lịch sử trao đổi vẫn có thể dùng README này để hiểu bài toán, tải
-dữ liệu, chạy một dataset, đọc artifact và biết ô nào đủ điều kiện đưa vào bài.
+(SKQ)** trên dữ liệu bảng. Raw run trong repo này chỉ là execution artifact; chỉ
+run qua gate, audit và export sang evidence store của paper mới được dùng làm số
+liệu bài báo.
 
 ## 1. Câu hỏi nghiên cứu
 
@@ -16,7 +16,8 @@ tập train nhỏ hơn nhưng vẫn giữ:
 4. khả năng tái lập bằng seed, commit và artifact bất biến.
 
 Phương pháp đề xuất dùng `parent structure × class` để chia nhóm, cấp exact quota,
-biểu diễn RBF bằng Random Fourier Features (RFF), chọn điểm bằng kernel herding và
+coarsen micro-strata theo class quota, biểu diễn RBF bằng Random Fourier Features
+(RFF), chọn điểm bằng kernel herding và
 tìm trọng số không âm tổng bằng khối lượng nhóm qua simplex-QP. P04/P05 ghép thêm
 OOF query loss để bảo toàn vùng khó của một hoặc nhiều learner mà không dùng
 dev/test.
@@ -41,7 +42,7 @@ trường hợp một file mang tên pilot/full nhưng chỉ âm thầm chạy h
 | Native | `n02_coretab_xgb_subset` | Gọi trực tiếp CoreTab-XGB commit khóa; giữ native size |
 | Native | `n_bdis_native` | Gọi BDIS upstream; bắt buộc `faiss`, không sklearn fallback |
 | Native | `n_autocoreset_native` | Nhập artifact do driver environment riêng tạo |
-| Native | `n_craig_native` | Facility-location/lazy-greedy từ repo CRAIG; O(n²) có preflight |
+| Adaptation | `a_craig_feature_space` | Facility-location/lazy-greedy feature-space; R1, không claim native |
 | Benchmark | `n_gcoreset_benchmark` | Gonzalez farthest-first theo benchmark Tabular Data Distillation |
 | Benchmark | `n_leverage_benchmark` | PCA leverage sampling theo cùng benchmark |
 | Synthetic | `s_kip_tdbench` | Gọi KIP trong TDBench; lưu `generated_train.npz` |
@@ -55,10 +56,9 @@ trường hợp một file mang tên pilot/full nhưng chỉ âm thầm chạy h
 | Ablation | `d04_global_rff_quadrature` | Bỏ parent structure, vẫn giữ class/RFF/herding/QP |
 | Ablation | `d05_equal_group_weight` | Giữ index của P05, thay QP bằng trọng số đều trong nhóm |
 
-`p00_structured_kquad` là engine dùng chung, không phải dòng kết quả. P03/P04/P05
-được code để kiểm tra tích hợp; trước bảng confirmatory phải chọn base winner trên
-dev và cập nhật freeze manifest. Pilot đang dùng N02 làm parent tạm cho P04/P05,
-không phải tuyên bố N02 đã thắng.
+`p00_structured_kquad` là engine dùng chung, không phải dòng kết quả. P04/P05 trả
+`GATE_LOCKED` nếu chưa có freeze manifest chứa base winner. Parent tạm trong pilot
+không mở gate và không phải tuyên bố N02 đã thắng.
 
 ## 3. Native, benchmark, synthetic khác nhau thế nào
 
@@ -68,7 +68,8 @@ không phải tuyên bố N02 đã thắng.
   kèm compatibility patch có khai báo. Không gọi nó là native paper.
 - **Synthetic**: sinh X/y mới nên không có `selected_indices.npy`; nó dùng contract
   và storage-matched table riêng.
-- **Proposed/ablation**: code trong package này, exact-budget và có unit test.
+- **Proposed/ablation**: code trong package này, classwise coarsening, exact-budget,
+  mass-preserving weights và invariant tests.
 
 AutoCoreset cần boundary riêng vì upstream phụ thuộc API cũ. BDIS cần Faiss. KIP
 cần JAX/neural-tangents; MTT cần PyTorch. Nếu môi trường không đạt, ledger nói rõ
@@ -117,7 +118,7 @@ cd C:\source\paper\skq_experiment
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install -e ".[boosting,deep,dev]"
+python -m pip install -e ".[boosting,deep,data,dev]"
 python scripts\fetch_official_repos.py
 pytest -q
 skq doctor
@@ -155,8 +156,9 @@ skq run --config configs\pilot_adult_full_seed11.json `
 
 Đây mới là lệnh **full**. Nó đi qua cả 19 method và 5 learner; không phải lệnh
 2-method quick check. `skq plan` phải báo 18 phương pháp nén/sinh, 95 ô tổng,
-91 ô hợp contract và 4 ô C02–non-XGB là `NA_CONTRACT`. Một số method có thể dừng
-ở resource/dependency gate như thiết kế. Chạy riêng
+91 ô hợp contract và 4 ô C02–non-XGB là `NA_CONTRACT`. P04/P05 giữ
+`GATE_LOCKED` cho tới khi base winner đã freeze; dependency bị thiếu không được
+coi là kết quả cuối. Chạy riêng
 một ô để debug:
 
 ```powershell
@@ -234,20 +236,15 @@ skq aggregate --artifact-root artifacts
 - `artifacts/aggregate/status_summary.csv`;
 - `artifacts/<experiment_id>/run_ledger.json`.
 
-## 9. Kết quả kiểm tra tích hợp đã thực hiện
+## 9. Trạng thái kết quả pilot cũ
 
-Trên Adult, Python 3.13, seed 11, dev split:
+Archive Adult seed 11 trước commit sửa contract chỉ là
+`integration_debug_adult_seed11`. Các run P01/P02/P04/P05 cũ đã bị vô hiệu hóa vì
+allocation trước đây bỏ mass của zero-quota strata. Phải chạy lại bằng schema v3;
+không được dùng các metric cũ để chọn winner hoặc viết bảng.
 
-- FullTrain-LR: chạy thành công;
-- D04-LR: exact 5%, chạy thành công;
-- CoreTab-DT/XGB official: chạy thành công và xuất structure;
-- P01/P02/P04/P05-LR: chạy thành công, exact 5%;
-- Gonzalez và Leverage benchmark-LR: chạy thành công;
-- BDIS: trả BLOCKED đúng vì môi trường hiện tại thiếu Faiss;
-- KIP: trả PREDICTED_TIMEOUT vì 5% Adult vượt synthetic gate 500 dòng.
-
-Các con số pilot trong artifact **không phải kết quả bài báo**: mới một seed, một
-phần learner và dev. Chúng chỉ chứng minh đường code thật đã chạy.
+Structure schema v3 bắt buộc có `row_ids`, `stratum_ids`, `candidate_mask` cùng
+dataset/split fingerprint. Artifact schema cũ bị từ chối khi replay.
 
 ## 10. Quy tắc trước khi viết bảng bài báo
 
