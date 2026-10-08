@@ -5,7 +5,6 @@ Runner vẫn đánh giá cùng learner và metric, nhưng lưu X/y sinh ra cùng
 """
 
 from .result import GeneratedDatasetResult
-from .tame import TAMEOfficialGenerator
 from .tdbench import TDBenchGenerator
 
-__all__ = ["GeneratedDatasetResult", "TAMEOfficialGenerator", "TDBenchGenerator"]
+__all__ = ["GeneratedDatasetResult", "TDBenchGenerator"]
