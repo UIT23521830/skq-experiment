@@ -54,8 +54,11 @@ def estimate_selection_cost(
     if "gcoreset" in method_id:
         operations += float(budget_rows * n_rows * n_features)
     if method_id.startswith("s_kip"):
+        # KIP-TDBench tạo kernel target-support với target batch lớn gấp 10 lần
+        # synthetic budget. Nhân thêm 6 cho kernel, gradient và trạng thái tối ưu;
+        # đây là ước lượng RAM có đơn vị, không phải trần budget tùy ý.
         operations += float(100 * max(1, budget_rows) ** 2 * max(1, n_features))
-        base_bytes += int(max(1, budget_rows) ** 2 * 8)
+        base_bytes += int(10 * max(1, budget_rows) ** 2 * 8 * 6)
     if method_id.startswith("s_mtt"):
         operations += float(100 * n_rows * n_features * max(2, n_classes))
     if method_id in {"p04_skq_lrq_sq", "p05_skq_lrq_mq"}:
@@ -103,4 +106,3 @@ class ResourceGuard:
             raise ResourceLimitError(
                 "oom", f"Dừng ở {stage}: RSS {rss / 1024**3:.2f} GiB vượt giới hạn"
             )
-

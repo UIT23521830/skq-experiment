@@ -4,12 +4,14 @@ Chúng tập trung vào confirmatory contract vì một lỗi budget hoặc lear
 này có thể làm toàn bộ bảng kết quả không còn đúng protocol.
 """
 
+import json
+from dataclasses import replace
 from pathlib import Path
 
-import json
 import pytest
 
 from skq_exp.config import ExperimentConfig
+from skq_exp.experiments.runner import _validate_lrq_gate
 
 
 def test_smoke_config_loads() -> None:
@@ -37,3 +39,35 @@ def test_unknown_method_is_rejected(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="Method chưa đăng ký"):
         ExperimentConfig.from_json(path)
 
+
+def test_lrq_can_screen_on_locked_dev_but_not_unlocked_test() -> None:
+    root = Path(__file__).parents[1]
+    config = ExperimentConfig.from_json(root / "configs" / "pilot_adult_full_seed11.json")
+    options = config.method_options["p04_skq_lrq_sq"]
+    reason, provenance = _validate_lrq_gate(config, options, freeze_manifest=None)
+    assert reason is None
+    assert provenance["selection_phase"] == "pre_freeze_dev_screen"
+    assert provenance["confirmatory_eligible"] is False
+
+    reason, _ = _validate_lrq_gate(replace(config, test_locked=False), options, None)
+    assert "test_locked=true" in reason
+
+    registered_screen = ExperimentConfig.from_json(root / "configs" / "s1_screen.json")
+    assert {"p04_skq_lrq_sq", "p05_skq_lrq_mq"} <= set(registered_screen.method_ids)
+
+
+def test_lrq_confirmatory_still_requires_matching_freeze() -> None:
+    root = Path(__file__).parents[1]
+    config = ExperimentConfig.from_json(root / "configs" / "s2_confirm.json")
+    options = {"parent_source": "n02_coretab_xgb_subset"}
+    reason, _ = _validate_lrq_gate(config, options, freeze_manifest=None)
+    assert "freeze" in reason
+
+    freeze = {
+        "base_winner_method_id": "p02_skq_coretab_xgb",
+        "base_winner_structure_source": "n02_coretab_xgb_subset",
+    }
+    reason, provenance = _validate_lrq_gate(config, options, freeze)
+    assert reason is None
+    assert provenance["parent_frozen"] is True
+    assert provenance["confirmatory_eligible"] is True

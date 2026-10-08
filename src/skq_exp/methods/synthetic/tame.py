@@ -1,9 +1,17 @@
-"""Official TAME adapter.
+"""Adapter TAME gọi trực tiếp hàm tổng hợp dữ liệu từ source chính thức.
 
-TAME is fetched into ``external/repos/tame`` by the locked-repository script.
-The adapter imports and calls the upstream ``tame_synthesize`` function instead
-of copying its optimization loop. The project only translates its tensor output
-into ``GeneratedDatasetResult`` and records the upstream commit.
+Trạng thái: official-source adapter có độ bám cao ở bước synthesis; file này nạp
+``tame_synthesize`` từ repo TAME đã khóa commit, không chép hoặc viết lại vòng tối
+ưu. Tuy nhiên, đây không phải tái lập nguyên vẹn toàn bộ paper vì preprocessing,
+budget và downstream learner được đặt theo protocol chung của SKQ. Cơ chế TAME:
+sinh các điểm train mới bằng distribution matching trong không gian embedding.
+Loại đầu ra: dữ liệu tổng hợp theo số mẫu mỗi lớp, không phải subset dòng thật.
+
+TAME được đưa vào bài làm baseline synthetic/dataset-condensation có source chính
+thức để so sánh với phương pháp nén bằng chọn dòng của SKQ. Adapter chỉ chuyển
+tensor sang ``GeneratedDatasetResult`` và ghi commit/provenance. Thiếu PyTorch,
+CUDA bắt buộc hoặc vượt ``max_rows`` phải ghi BLOCKED/predicted_timeout; không có
+fallback mang tên TAME.
 """
 
 from __future__ import annotations
@@ -96,8 +104,14 @@ class TAMEOfficialGenerator:
                 "init_seed": self.seed,
             }
             data = {
-                "X_train": torch.as_tensor(np.asarray(X_train), dtype=torch.float32),
-                "y_train": torch.as_tensor(np.asarray(y_train), dtype=torch.long),
+                # Processed arrays có thể là read-only memmap. Tạo bản sao writable
+                # để PyTorch không cảnh báo/ghi ngoài ý muốn; giá trị không thay đổi.
+                "X_train": torch.as_tensor(
+                    np.array(X_train, dtype=np.float32, copy=True), dtype=torch.float32
+                ),
+                "y_train": torch.as_tensor(
+                    np.array(y_train, dtype=np.int64, copy=True), dtype=torch.long
+                ),
                 "input_dim": int(X_train.shape[1]),
                 "num_classes": int(len(labels)),
             }
@@ -146,7 +160,7 @@ class TAMEOfficialGenerator:
 
 
 def _load_tame_synthesize(repo: Path):
-    """Load the upstream module with its expected top-level ``models`` package."""
+    """Nạp module upstream cùng package ``models`` ở đúng vị trí mà TAME mong đợi."""
     repo_text = str(repo)
     if repo_text not in sys.path:
         sys.path.insert(0, repo_text)

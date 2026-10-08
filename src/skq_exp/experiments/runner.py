@@ -225,6 +225,7 @@ def _produce_or_block(
         indices = np.arange(len(y_train), dtype=np.int64)
         return SelectionResult(indices, np.ones(len(indices)), len(indices), len(indices), "full", method_id)
     options = dict((config.method_options or {}).get(method_id, {}))
+    lrq_provenance: dict[str, Any] = {}
     if options.get("parent_source") == "@base_winner_structure":
         if freeze_manifest is None or not freeze_manifest.get("base_winner_structure_source"):
             return SelectionResult.failure(
@@ -241,22 +242,13 @@ def _produce_or_block(
             )
         options["source_method"] = frozen_roles["proposed_winner"]
     if method_id in {"p04_skq_lrq_sq", "p05_skq_lrq_mq"}:
-        if freeze_manifest is None:
+        gate_reason, lrq_provenance = _validate_lrq_gate(
+            config, options, freeze_manifest
+        )
+        if gate_reason is not None:
             return SelectionResult.failure(
                 method_id, "gate_locked", requested,
-                "LRQ chỉ mở sau khi freeze base winner trên dev",
-            )
-        frozen_source = freeze_manifest.get("base_winner_structure_source")
-        frozen_base = freeze_manifest.get("base_winner_method_id")
-        if not frozen_source or not frozen_base:
-            return SelectionResult.failure(
-                method_id, "gate_locked", requested,
-                "Freeze manifest thiếu base_winner_method_id/base_winner_structure_source",
-            )
-        if options.get("parent_source") != frozen_source:
-            return SelectionResult.failure(
-                method_id, "gate_locked", requested,
-                f"LRQ parent_source={options.get('parent_source')} không khớp frozen source={frozen_source}",
+                gate_reason,
             )
     if method_id == "n_autocoreset_native":
         processed = config.paths.processed_root / dataset_id
@@ -278,7 +270,21 @@ def _produce_or_block(
     try:
         enforce_preflight(estimate, config.resource)
     except ResourceLimitError as error:
-        return _failure_for_kind(spec.output_kind, method_id, error.status, requested, str(error))
+        failure = _failure_for_kind(
+            spec.output_kind, method_id, error.status, requested, str(error)
+        )
+        failure.diagnostics.update({
+            "resource_failure": True,
+            "resource_gate": "preflight",
+            "resource_status": error.status,
+            "estimated_working_bytes": int(estimate.working_bytes),
+            "estimated_operations": float(estimate.estimated_operations),
+            "configured_max_ram_gb": float(config.resource.get("max_ram_gb", 8.0)),
+            "configured_max_estimated_operations": float(
+                config.resource.get("max_estimated_operations", 50_000_000_000)
+            ),
+        })
+        return failure
     guard = ResourceGuard(config.resource)
     if spec.output_kind == "synthetic":
         try:
@@ -337,7 +343,12 @@ def _produce_or_block(
                 query_cache[cache_key] = (query_values, query_metadata)
             except Exception as error:
                 return SelectionResult.failure(method_id, "failed", requested, f"OOF query loss lỗi: {error!r}")
-        kwargs["query_features"], kwargs["query_metadata"] = query_cache[cache_key]
+        kwargs["query_features"], cached_metadata = query_cache[cache_key]
+        kwargs["query_metadata"] = {
+            **cached_metadata,
+            **lrq_provenance,
+            "parent_source": str(options.get("parent_source")),
+        }
     try:
         result = selector.select(X_train, y_train, config.budget_ratio, **kwargs)
     except ResourceLimitError as error:
@@ -367,6 +378,40 @@ def _produce_or_block(
             config, dataset_id, method_id, seed, structure, result, data_fingerprint,
         )
     return result
+
+
+def _validate_lrq_gate(config, options, freeze_manifest):
+    """Cho phép dev screen có kiểm soát, nhưng không hạ gate confirmatory/test."""
+    parent_source = str(options.get("parent_source", ""))
+    if config.stage_id == "s1_screen":
+        if not config.test_locked:
+            return "LRQ dev screen yêu cầu test_locked=true", {}
+        if not parent_source or parent_source.startswith("@"):
+            return "LRQ dev screen cần parent_source cụ thể được khai báo trước", {}
+        return None, {
+            "selection_phase": "pre_freeze_dev_screen",
+            "parent_frozen": False,
+            "confirmatory_eligible": False,
+            "evaluation_split": "dev",
+        }
+    if freeze_manifest is None:
+        return "LRQ ngoài s1_screen chỉ mở sau khi freeze base winner trên dev", {}
+    frozen_source = freeze_manifest.get("base_winner_structure_source")
+    frozen_base = freeze_manifest.get("base_winner_method_id")
+    if not frozen_source or not frozen_base:
+        return "Freeze manifest thiếu base_winner_method_id/base_winner_structure_source", {}
+    if parent_source != frozen_source:
+        return (
+            f"LRQ parent_source={parent_source} không khớp frozen source={frozen_source}",
+            {},
+        )
+    return None, {
+        "selection_phase": "post_freeze_confirmatory",
+        "parent_frozen": True,
+        "confirmatory_eligible": True,
+        "evaluation_split": "test" if config.stage_id == "s2_confirm" else "dev",
+        "frozen_base_winner_method_id": str(frozen_base),
+    }
 
 
 def _resolve_structure(

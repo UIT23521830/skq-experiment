@@ -1,11 +1,16 @@
-"""Adapters chạy trực tiếp hai hàm selector trong repo benchmark chính thức.
+"""Adapter Gonzalez và Leverage từ repo benchmark Tabular Data Distillation.
 
-Repo upstream hiện gom cả các baseline tổng hợp vào một file có import optional
-SDV và thiếu import ``PCA`` ở hàm leverage. Adapter này chỉ compile đúng hai
-``FunctionDef`` cần dùng từ file upstream, inject các dependency tối thiểu, rồi
-không chạy phần code không liên quan. Như vậy thuật toán vẫn là code upstream,
-nhưng provenance ghi rõ compatibility boundary và việc khôi phục index cho
-Gonzalez vì hàm gốc chỉ trả về các dòng đã chọn.
+Trạng thái: official-benchmark-source adapter, không phải source gốc của paper
+Gonzalez/Leverage và vì vậy không gắn nhãn native-paper. Adapter chạy trực tiếp
+hai hàm upstream đã khóa commit; chỉ thêm seed, inject ``PCA`` bị thiếu và khôi
+phục index cho Gonzalez. Cơ chế: Gonzalez là farthest-first/k-center; Leverage
+chọn theo leverage score sau phép chiếu PCA. Loại đầu ra: tập con dòng thật đúng
+exact budget, trọng số bằng nhau.
+
+Hai baseline được đưa vào bài để đại diện cho phương pháp hình học cổ điển và
+phương pháp dựa trên độ ảnh hưởng tuyến tính. Repo upstream còn import SDV không
+liên quan, nên file này chỉ compile đúng hai ``FunctionDef`` cần thiết; không đổi
+công thức chọn mẫu nhưng luôn ghi rõ compatibility boundary trong provenance.
 """
 
 from __future__ import annotations
@@ -24,7 +29,7 @@ from ..native.common import git_commit
 
 
 def _load_upstream_functions(repo: Path) -> dict[str, object]:
-    """Compile only the two upstream functions, bypassing unrelated SDV imports."""
+    """Chỉ compile hai hàm upstream, bỏ qua các import SDV không liên quan."""
     source_path = repo / "tabular_distillation_method.py"
     if not source_path.exists():
         raise FileNotFoundError(f"Thiếu source upstream: {source_path}")
@@ -48,7 +53,7 @@ def _load_upstream_functions(repo: Path) -> dict[str, object]:
 
 
 def _recover_indices(X: np.ndarray, selected: np.ndarray) -> np.ndarray:
-    """Recover upstream Gonzalez row positions without changing selected rows."""
+    """Khôi phục vị trí dòng Gonzalez đã chọn mà không đổi nội dung output."""
     X = np.asarray(X)
     selected = np.asarray(selected)
     buckets: dict[bytes, list[int]] = {}

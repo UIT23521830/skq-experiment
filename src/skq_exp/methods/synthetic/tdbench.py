@@ -1,8 +1,16 @@
-"""File này gọi trực tiếp KIP hoặc MTT từ repo TDBench đã khóa commit.
+"""Adapter KIP và MTT từ repo benchmark TDBench đã khóa commit.
 
-Adapter không sao chép thuật toán. Nó nạp hàm của repo tác giả, đổi budget tổng
-sang số mẫu trên mỗi lớp theo contract TDBench và trả dữ liệu sinh cùng thông tin
-commit. Thiếu dependency sẽ thành BLOCKED có lý do, không đổi sang thuật toán khác.
+Trạng thái: benchmark-source adapter, không tuyên bố là native source của paper
+KIP/MTT hay tái lập toàn bộ thiết lập paper. Adapter gọi trực tiếp hàm TDBench và
+chỉ đổi budget tổng sang số mẫu mỗi lớp theo contract của repo. KIP sinh dữ liệu
+bằng kernel inducing points; MTT sinh dữ liệu bằng cách khớp quỹ đạo huấn luyện.
+Loại đầu ra của cả hai là bảng train tổng hợp, không phải subset dòng thật.
+
+KIP/MTT được đưa vào bài làm baseline dataset distillation mạnh để so sánh utility
+của một tập train rất nhỏ với SKQ. Adapter không đặt trần số dòng tùy ý: budget là
+biến thực nghiệm và số dòng thực sinh luôn được lưu. Chỉ preflight RAM/phép tính
+hoặc lỗi tài nguyên thật mới tạo trạng thái OOM/timeout; tuyệt đối không dùng
+fallback rồi giữ nguyên tên.
 """
 
 from __future__ import annotations
@@ -19,6 +27,7 @@ import numpy as np
 
 from ..contracts import exact_budget_size
 from ..native.common import verify_locked_repo
+from ...resources import ResourceLimitError
 from .result import GeneratedDatasetResult
 
 
@@ -42,22 +51,22 @@ class TDBenchGenerator:
             return GeneratedDatasetResult.failure(
                 self.method_id, "blocked", requested, str(error)
             )
-        max_rows = int(self.options.get("max_rows", 500))
-        if requested > max_rows:
-            return GeneratedDatasetResult.failure(
-                self.method_id, "predicted_timeout", requested,
-                f"Synthetic budget {requested} vượt resource gate {max_rows}; "
-                "tăng method_options.max_rows chỉ sau smoke GPU",
-            )
         labels = np.unique(y_train)
-        per_label = requested // len(labels)
+        per_label, budget_diagnostics = _plan_tdbench_budget(
+            self.method_id, np.asarray(y_train), requested
+        )
         if per_label < 1:
-            return GeneratedDatasetResult.failure(
+            result = GeneratedDatasetResult.failure(
                 self.method_id, "budget_infeasible", requested,
-                "Budget tổng nhỏ hơn số lớp theo contract n/L của TDBench",
+                budget_diagnostics["budget_limitation_reason"],
             )
+            result.diagnostics.update(budget_diagnostics)
+            return result
         started = time.perf_counter()
+        resource_guard = kwargs.get("resource_guard")
         try:
+            if resource_guard is not None:
+                resource_guard.check("trước khi gọi TDBench")
             if self.method_id == "s_kip_tdbench":
                 module = _load_distill_module(repo, "kip")
                 X_syn, y_syn = module.kip(
@@ -87,12 +96,29 @@ class TDBenchGenerator:
                 )
             else:
                 raise KeyError(self.method_id)
+            if resource_guard is not None:
+                resource_guard.check("sau khi gọi TDBench")
         except (ModuleNotFoundError, ImportError) as error:
             return GeneratedDatasetResult.failure(
                 self.method_id, "blocked", requested,
                 f"Dependency TDBench chưa đủ: {error}",
             )
+        except ResourceLimitError as error:
+            return _resource_failure(
+                self.method_id, error.status, requested, str(error), budget_diagnostics
+            )
+        except MemoryError as error:
+            return _resource_failure(
+                self.method_id, "oom", requested,
+                f"Runtime hết RAM khi chạy TDBench: {error!r}", budget_diagnostics,
+            )
         except Exception as error:
+            resource_status = _classify_resource_exception(error)
+            if resource_status is not None:
+                return _resource_failure(
+                    self.method_id, resource_status, requested,
+                    f"TDBench dừng vì tài nguyên: {error!r}", budget_diagnostics,
+                )
             return GeneratedDatasetResult.failure(
                 self.method_id, "failed", requested,
                 f"TDBench trả lỗi, không dùng fallback: {error!r}",
@@ -121,13 +147,98 @@ class TDBenchGenerator:
             diagnostics={
                 "upstream_repo": "https://github.com/inwonakng/tdbench.git",
                 "upstream_commit": commit,
-                "budget_contract": "TDBench n/L; realized = floor(requested/classes)*classes",
+                "execution_mode": "pinned_upstream_source_function",
+                "fidelity": "benchmark-source adapter; upstream algorithm is not modified",
+                "budget_contract": budget_diagnostics["budget_contract"],
                 "n_per_label": int(per_label),
+                **budget_diagnostics,
                 "class_counts": {str(int(v)): int(np.sum(y_syn == v)) for v in np.unique(y_syn)},
                 "storage_bytes_float32": int(X_syn.astype(np.float32).nbytes + y_syn.nbytes),
             },
             timings={"generate": elapsed, "total": elapsed},
         )
+
+
+def _plan_tdbench_budget(
+    method_id: str, y_train: np.ndarray, requested: int,
+) -> tuple[int, dict[str, Any]]:
+    """Đổi budget tổng sang budget mỗi lớp mà source TDBench thật sự chạy được.
+
+    KIP của TDBench lấy ``10 * N`` dòng thật ở *mỗi lớp*, không hoàn lại. Vì vậy
+    N không thể lớn hơn ``min_class_count // 10``. Đây là ràng buộc đầu vào của
+    source, không phải resource gate và không được báo nhầm thành timeout/OOM.
+    """
+    labels, counts = np.unique(y_train, return_counts=True)
+    n_classes = int(len(labels))
+    requested_per_label = requested // n_classes if n_classes else 0
+    per_label = requested_per_label
+    diagnostics: dict[str, Any] = {
+        "requested_total_rows": int(requested),
+        "requested_per_label": int(requested_per_label),
+        "number_of_classes": n_classes,
+        "minimum_class_rows": int(counts.min()) if len(counts) else 0,
+        "source_feasibility_limited": False,
+        "budget_contract": "TDBench n/L; realized = floor(requested/classes)*classes",
+    }
+    if method_id == "s_kip_tdbench" and len(counts):
+        target_multiplier = 10
+        source_limit = int(counts.min() // target_multiplier)
+        per_label = min(requested_per_label, source_limit)
+        diagnostics.update({
+            "kip_target_multiplier": target_multiplier,
+            "source_max_per_label": source_limit,
+            "source_feasibility_limited": per_label < requested_per_label,
+            "budget_contract": (
+                "KIP-TDBench N/lớp; source lấy 10*N dòng thật/lớp không hoàn lại; "
+                "realized = min(floor(requested/classes), floor(min_class/10))*classes"
+            ),
+        })
+    diagnostics["planned_per_label"] = int(per_label)
+    diagnostics["planned_realized_rows"] = int(per_label * n_classes)
+    if per_label < 1:
+        if n_classes == 0:
+            reason = "Tập train không có nhãn nên TDBench không thể sinh dữ liệu"
+        elif method_id == "s_kip_tdbench" and requested_per_label >= 1:
+            reason = (
+                "KIP-TDBench cần ít nhất 10 dòng thật ở mỗi lớp vì source lấy "
+                "target batch 10*N không hoàn lại"
+            )
+        else:
+            reason = "Budget tổng nhỏ hơn số lớp theo contract n/L của TDBench"
+        diagnostics["budget_limitation_reason"] = reason
+    else:
+        diagnostics["budget_limitation_reason"] = ""
+    return int(per_label), diagnostics
+
+
+def _classify_resource_exception(error: Exception) -> str | None:
+    """Nhận diện lỗi tài nguyên phổ biến của CUDA/JAX mà không import framework."""
+    text = f"{type(error).__name__}: {error}".lower()
+    oom_markers = (
+        "out of memory", "resource exhausted", "resource_exhausted",
+        "cudaerroroutofmemory", "cuda out of memory", "cannot allocate memory",
+    )
+    if any(marker in text for marker in oom_markers):
+        return "oom"
+    if "timed out" in text or "timeout" in text:
+        return "timeout"
+    return None
+
+
+def _resource_failure(
+    method_id: str,
+    status: str,
+    requested: int,
+    reason: str,
+    budget_diagnostics: dict[str, Any],
+) -> GeneratedDatasetResult:
+    result = GeneratedDatasetResult.failure(method_id, status, requested, reason)
+    result.diagnostics.update({
+        **budget_diagnostics,
+        "resource_failure": True,
+        "resource_status": status,
+    })
+    return result
 
 
 def _load_distill_module(repo: Path, module_name: str):

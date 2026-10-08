@@ -17,6 +17,12 @@ from skq_exp.methods.proposed.simplex_qp import solve_simplex_mean_match
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_every_registered_method_has_an_explanatory_note():
+    """Mỗi method phải tự mô tả vai trò/mức tái hiện để tránh ghi sai trong bài."""
+    missing = [method_id for method_id, spec in METHOD_SPECS.items() if not spec.note.strip()]
+    assert missing == []
+
+
 def test_adult_full_config_has_20_rows_and_five_learners():
     config = ExperimentConfig.from_json(ROOT / "configs" / "pilot_adult_full_seed11.json")
     assert len(config.method_ids) == 20
@@ -28,6 +34,13 @@ def test_adult_full_config_has_20_rows_and_five_learners():
     } == {"synthetic"}
     alias = ExperimentConfig.from_json(ROOT / "configs" / "pilot_adult_seed11.json")
     assert alias.method_ids == config.method_ids
+    assert config.test_locked is True
+    assert config.method_options["p04_skq_lrq_sq"]["parent_source"] == "n02_coretab_xgb_subset"
+    assert config.method_options["p05_skq_lrq_mq"]["parent_source"] == "n02_coretab_xgb_subset"
+    # Budget là biến thực nghiệm; KIP/MTT chỉ bị chặn bởi preflight tài nguyên có
+    # đơn vị rõ ràng, không bởi trần số dòng tùy ý.
+    assert "max_rows" not in config.method_options["s_kip_tdbench"]
+    assert "max_rows" not in config.method_options["s_mtt_tdbench"]
 
 
 def test_benchmark_selectors_return_exact_unique_indices(tmp_path):

@@ -123,6 +123,19 @@ class ExperimentConfig:
             raise ValueError(f"Method cần method_options.parent_source: {missing_parent}")
         if not self.selector_seeds or len(set(self.selector_seeds)) != len(self.selector_seeds):
             raise ValueError("selector_seeds phải có ít nhất một giá trị và không trùng")
+        lrq_methods = {"p04_skq_lrq_sq", "p05_skq_lrq_mq"} & set(self.method_ids)
+        if self.stage_id == "s1_screen" and lrq_methods:
+            if not self.test_locked:
+                raise ValueError("LRQ s1_screen chỉ được chạy khi test_locked=true")
+            unresolved = [
+                method_id for method_id in sorted(lrq_methods)
+                if str(options.get(method_id, {}).get("parent_source", "")).startswith("@")
+            ]
+            if unresolved:
+                raise ValueError(
+                    "LRQ s1_screen cần parent_source cụ thể khai báo trước: "
+                    f"{unresolved}"
+                )
         if self.stage_id == "s2_confirm":
             if self.budget_ratio != 0.05 or tuple(self.learner_ids) != ("xgb",):
                 raise ValueError("confirmatory contract yêu cầu budget 5% và chỉ XGBoost")
@@ -170,4 +183,3 @@ class ExperimentConfig:
 def _resolve_path(base: Path, value: str) -> Path:
     path = Path(value)
     return path.resolve() if path.is_absolute() else (base / path).resolve()
-

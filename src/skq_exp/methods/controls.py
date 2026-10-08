@@ -1,8 +1,10 @@
-"""File này chứa control đơn giản dùng để kiểm tra proposed có thật sự hữu ích.
+"""Đối chứng ngẫu nhiên phân tầng cho bảng so sánh.
 
-Stratified Random giữ tỷ lệ lớp bằng cách chia exact budget theo số mẫu của từng
-lớp rồi lấy ngẫu nhiên không hoàn lại. Nó chỉ là control confirmatory, không phải
-đóng góp phương pháp.
+Trạng thái: code nội bộ, không phải phương pháp đề xuất và không tuyên bố tái hiện
+một paper cụ thể. Cơ chế: chia exact budget theo tỷ lệ lớp rồi lấy mẫu ngẫu nhiên
+không hoàn lại. Loại đầu ra: tập con gồm các dòng thật, trọng số bằng nhau. Phương
+pháp được đưa vào bài làm mốc cổ điển để kiểm tra SKQ có tốt hơn việc lấy mẫu ngẫu
+nhiên nhưng vẫn bảo toàn phân bố nhãn hay không.
 """
 
 from __future__ import annotations
@@ -77,4 +79,3 @@ class StratifiedRandomSelector(BaseSelector):
             },
             timings={"select": time.perf_counter() - started},
         )
-

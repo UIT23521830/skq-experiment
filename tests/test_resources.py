@@ -27,3 +27,13 @@ def test_preflight_blocks_operation_heavy_run() -> None:
         enforce_preflight(estimate, {"max_ram_gb": 128, "max_estimated_operations": 1e6})
     assert caught.value.status == "predicted_timeout"
 
+
+def test_kip_memory_estimate_includes_target_kernel_and_gradients() -> None:
+    budget = 1_384
+    estimate = estimate_selection_cost(
+        "s_kip_tdbench", 27_676, 100, budget, rff_components=1, n_classes=2
+    )
+    # Riêng target-support kernel float64 đã là 10 * budget^2 * 8 byte;
+    # estimate phải lớn hơn mức đó vì còn gradient và optimizer.
+    raw_target_kernel = 10 * budget ** 2 * 8
+    assert estimate.working_bytes > raw_target_kernel

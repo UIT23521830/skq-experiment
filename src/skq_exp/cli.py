@@ -117,7 +117,9 @@ def main(argv: list[str] | None = None) -> int:
 
 def _doctor() -> dict:
     core = ["numpy", "scipy", "pandas", "sklearn", "xgboost", "catboost", "torch", "psutil", "ahocorasick", "statsmodels"]
-    optional = ["faiss", "fast_enum", "jax", "neural_tangents"]
+    optional = [
+        "faiss", "fast_enum", "iterstrat", "jax", "neural_tangents", "torchvision",
+    ]
     return {
         "python": platform.python_version(),
         "platform": platform.platform(),
@@ -162,4 +164,3 @@ def _plan(config: ExperimentConfig, *, include_cells: bool = False) -> dict:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
