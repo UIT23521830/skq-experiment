@@ -1,10 +1,13 @@
 """Adapter KIP và MTT từ repo benchmark TDBench đã khóa commit.
 
 Trạng thái: benchmark-source adapter, không tuyên bố là native source của paper
-KIP/MTT hay tái lập toàn bộ thiết lập paper. Adapter gọi trực tiếp hàm TDBench và
-chỉ đổi budget tổng sang số mẫu mỗi lớp theo contract của repo. KIP sinh dữ liệu
-bằng kernel inducing points; MTT sinh dữ liệu bằng cách khớp quỹ đạo huấn luyện.
-Loại đầu ra của cả hai là bảng train tổng hợp, không phải subset dòng thật.
+KIP/MTT hay tái lập toàn bộ thiết lập paper. Adapter gọi hàm TDBench ở commit đã
+khóa, đổi budget tổng sang số mẫu mỗi lớp theo contract của repo và áp dụng các
+bản vá hẹp, có khai báo trong diagnostics: import JAX hiện hành cho KIP; bật
+gradient, snapshot đúng expert và lấy mẫu quỹ đạo biến thiên cho MTT theo cơ chế
+code MTT chính thức. KIP sinh dữ liệu bằng kernel inducing points; MTT sinh dữ
+liệu bằng cách khớp quỹ đạo huấn luyện. Loại đầu ra của cả hai là bảng train tổng
+hợp, không phải subset dòng thật.
 
 KIP/MTT được đưa vào bài làm baseline dataset distillation mạnh để so sánh utility
 của một tập train rất nhỏ với SKQ. Adapter không đặt trần số dòng tùy ý: budget là
@@ -136,7 +139,19 @@ class TDBenchGenerator:
                 self.method_id, "failed", requested,
                 "TDBench output vi phạm shape/finite/label coverage contract",
             )
+        if self.method_id == "s_mtt_tdbench":
+            exact_pairs = _count_exact_training_pairs(X_syn, y_syn, X_train, y_train)
+            if exact_pairs == len(X_syn):
+                return GeneratedDatasetResult.failure(
+                    self.method_id,
+                    "failed",
+                    requested,
+                    "MTT không cập nhật dữ liệu tổng hợp: toàn bộ output vẫn là dòng train gốc",
+                )
+        else:
+            exact_pairs = None
         elapsed = time.perf_counter() - started
+        source_patches = list(getattr(module, "__skq_source_patches__", ()))
         return GeneratedDatasetResult(
             X=X_syn,
             y=y_syn,
@@ -147,12 +162,20 @@ class TDBenchGenerator:
             diagnostics={
                 "upstream_repo": "https://github.com/inwonakng/tdbench.git",
                 "upstream_commit": commit,
-                "execution_mode": "pinned_upstream_source_function",
-                "fidelity": "benchmark-source adapter; upstream algorithm is not modified",
+                "execution_mode": (
+                    "pinned_upstream_source_with_declared_patch"
+                    if source_patches else "pinned_upstream_source_function"
+                ),
+                "fidelity": (
+                    "benchmark-source adapter; bản vá tương thích/khôi phục gradient "
+                    "được khai báo, không phải chạy nguyên trạng TDBench"
+                ),
+                "source_patches": source_patches,
                 "budget_contract": budget_diagnostics["budget_contract"],
                 "n_per_label": int(per_label),
                 **budget_diagnostics,
                 "class_counts": {str(int(v)): int(np.sum(y_syn == v)) for v in np.unique(y_syn)},
+                "exact_training_pairs": exact_pairs,
                 "storage_bytes_float32": int(X_syn.astype(np.float32).nbytes + y_syn.nbytes),
             },
             timings={"generate": elapsed, "total": elapsed},
@@ -242,7 +265,7 @@ def _resource_failure(
 
 
 def _load_distill_module(repo: Path, module_name: str):
-    """Nạp đúng file upstream mà không chạy `distill/__init__` và các extra khác."""
+    """Nạp file upstream với các bản vá hẹp, kiểm chứng được và có provenance."""
     root = repo / "tabdd" / "distill"
     package_name = "_skq_tdbench_distill"
     package = sys.modules.get(package_name)
@@ -259,9 +282,114 @@ def _load_distill_module(repo: Path, module_name: str):
             assert spec.loader is not None
             spec.loader.exec_module(loaded)
     qualified = f"{package_name}.{module_name}"
-    spec = importlib.util.spec_from_file_location(qualified, root / f"{module_name}.py")
+    source_path = root / f"{module_name}.py"
+    source = source_path.read_text(encoding="utf-8")
+    source, source_patches = _patch_tdbench_source(module_name, source)
+    spec = importlib.util.spec_from_file_location(qualified, source_path)
     loaded = importlib.util.module_from_spec(spec)
     sys.modules[qualified] = loaded
-    assert spec.loader is not None
-    spec.loader.exec_module(loaded)
+    exec(compile(source, str(source_path), "exec"), loaded.__dict__)
+    loaded.__skq_source_patches__ = tuple(source_patches)
     return loaded
+
+
+def _patch_tdbench_source(module_name: str, source: str) -> tuple[str, list[str]]:
+    """Áp dụng patch tối thiểu; source lệch mẫu đã khóa thì dừng thay vì vá mơ hồ."""
+    patches: list[str] = []
+    if module_name == "kip":
+        source = _replace_once(
+            source,
+            "import jax.config\nfrom jax.config import config as jax_config",
+            "from jax import config as jax_config",
+            "kip_jax_config_import_compat",
+        )
+        patches.append("kip_jax_config_import_compat")
+    elif module_name == "trajectory_matching":
+        source = _replace_once(
+            source,
+            "random_state = expert_seeds[0]",
+            "random_state = expert_seeds[i]",
+            "mtt_distinct_expert_seeds",
+        )
+        source = _replace_once(
+            source,
+            "trajectories.append([p.detach().cpu() for p in model.parameters()])\n"
+            "        opt_model = optim.SGD",
+            "trajectories.append([p.detach().cpu().clone() for p in model.parameters()])\n"
+            "        opt_model = optim.SGD",
+            "mtt_clone_initial_expert_snapshot",
+        )
+        source = _replace_once(
+            source,
+            "trajectories.append([p.detach().cpu() for p in model.parameters()])\n"
+            "        all_trajectories.append",
+            "trajectories.append([p.detach().cpu().clone() for p in model.parameters()])\n"
+            "        all_trajectories.append",
+            "mtt_clone_epoch_expert_snapshots",
+        )
+        source = _replace_once(
+            source,
+            "X_syn = torch.tensor(X[support_idxs]).float().to(device)",
+            "X_syn = torch.tensor(X[support_idxs]).float().to(device).requires_grad_(True)",
+            "mtt_trainable_synthetic_data",
+        )
+        source = _replace_once(
+            source,
+            "syn_lr = torch.tensor(lr_teacher).to(device)",
+            "syn_lr = torch.tensor(lr_teacher).to(device).requires_grad_(True)",
+            "mtt_trainable_learning_rate",
+        )
+        source = _replace_once(
+            source,
+            "param_cache = {}\n\n"
+            "    for it in range(n_iter):",
+            "param_cache = {}\n"
+            "    rng = random.Random(random_state)\n\n"
+            "    for it in range(n_iter):",
+            "mtt_persistent_trajectory_rng",
+        )
+        source = _replace_once(
+            source,
+            "        rng = random.Random(random_state)\n"
+            "        start_epoch = rng.randint(0, max_start_epoch)",
+            "        start_epoch = rng.randint(0, max_start_epoch)",
+            "mtt_remove_per_iteration_rng_reset",
+        )
+        patches.extend([
+            "mtt_distinct_expert_seeds",
+            "mtt_clone_initial_expert_snapshot",
+            "mtt_clone_epoch_expert_snapshots",
+            "mtt_trainable_synthetic_data",
+            "mtt_trainable_learning_rate",
+            "mtt_persistent_trajectory_rng",
+            "mtt_remove_per_iteration_rng_reset",
+        ])
+    return source, patches
+
+
+def _replace_once(source: str, old: str, new: str, patch_id: str) -> str:
+    count = source.count(old)
+    if count != 1:
+        raise RuntimeError(
+            f"Không thể áp dụng patch {patch_id}: cần đúng 1 vị trí, tìm thấy {count}"
+        )
+    return source.replace(old, new, 1)
+
+
+def _count_exact_training_pairs(
+    X_generated: np.ndarray,
+    y_generated: np.ndarray,
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+) -> int:
+    """Đếm output trùng hoàn toàn cặp (features, label) của tập train."""
+    generated = np.asarray(X_generated, dtype=np.float32)
+    reference = np.asarray(X_train, dtype=np.float32)
+    reference_pairs = {
+        (np.ascontiguousarray(row).tobytes(), int(label))
+        for row, label in zip(reference, np.asarray(y_train).reshape(-1), strict=True)
+    }
+    return sum(
+        (np.ascontiguousarray(row).tobytes(), int(label)) in reference_pairs
+        for row, label in zip(generated, np.asarray(y_generated).reshape(-1), strict=True)
+    )
