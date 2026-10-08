@@ -18,6 +18,7 @@
     "n_leverage_benchmark",
     "s_kip_tdbench",
     "s_mtt_tdbench",
+    "s_tame_official",
     "d02_parent_structured_random",
     "d04_global_rff_quadrature",
     "p01_skq_coretab_dt",
@@ -80,6 +81,18 @@
       "mlp_dim": 64,
       "n_iter": 100,
       "n_hidden_layers": 2
+    },
+    "s_tame_official": {
+      "max_rows": 2000,
+      "dm_iters": 100,
+      "dm_lr": 0.5,
+      "dm_batch_real": 128,
+      "dm_embed_hidden": 128,
+      "dm_embed_dim": 64,
+      "dm_embedder_type": "ln_res_l",
+      "dm_embedder_size": "small",
+      "cov_weight": 1.0,
+      "dm_views": 1
     },
     "d02_parent_structured_random": {
       "parent_source": "n02_coretab_xgb_subset",

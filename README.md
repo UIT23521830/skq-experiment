@@ -28,7 +28,7 @@ trên **dev**; kết quả đó chỉ phục vụ kiểm tra code và screening.
 ## 2. Panel đã được code
 
 Config [`pilot_adult_full_seed11.json`](configs/pilot_adult_full_seed11.json) có
-19 dòng, tương ứng 95 ô method × learner ở một seed. Ô không hợp contract vẫn
+20 dòng, tương ứng 100 ô method × learner ở một seed. Ô không hợp contract vẫn
 được ghi `NA_CONTRACT`; thiếu dependency, vượt RAM hoặc vượt time gate vẫn được
 ghi `BLOCKED/PREDICTED_OOM/PREDICTED_TIMEOUT`, không bị xóa khỏi mẫu số.
 Tên cũ `pilot_adult_seed11.json` hiện là alias của full config, nên không còn
@@ -43,10 +43,11 @@ trường hợp một file mang tên pilot/full nhưng chỉ âm thầm chạy h
 | Native | `n_bdis_native` | Gọi BDIS upstream; bắt buộc `faiss`, không sklearn fallback |
 | Native | `n_autocoreset_native` | Nhập artifact do driver environment riêng tạo |
 | Adaptation | `a_craig_feature_space` | Facility-location/lazy-greedy feature-space; R1, không claim native |
-| Benchmark | `n_gcoreset_benchmark` | Gonzalez farthest-first theo benchmark Tabular Data Distillation |
-| Benchmark | `n_leverage_benchmark` | PCA leverage sampling theo cùng benchmark |
+| Official-source adapter | `n_gcoreset_benchmark` | Gọi trực tiếp `distill_coreset` từ benchmark Tabular Data Distillation; adapter chỉ seed và khôi phục index |
+| Official-source adapter | `n_leverage_benchmark` | Gọi trực tiếp `distill_coreset_leverage_scores`; adapter inject import PCA/seed |
 | Synthetic | `s_kip_tdbench` | Gọi KIP trong TDBench; lưu `generated_train.npz` |
 | Synthetic | `s_mtt_tdbench` | Gọi trajectory matching trong TDBench |
+| Synthetic | `s_tame_official` | Gọi `tame_synthesize` từ TAME; GPU/`max_rows` gate rõ ràng |
 | Proposed | `p01_skq_coretab_dt` | SKQ dùng structure do N01 xuất |
 | Proposed | `p02_skq_coretab_xgb` | SKQ dùng structure do N02 xuất |
 | Proposed | `p03_skq_bdis_filtered` | SKQ trên candidate/structure BDIS; chỉ mở khi BDIS gate qua |
@@ -64,8 +65,8 @@ không mở gate và không phải tuyên bố N02 đã thắng.
 
 - **Native**: chạy implementation của tác giả đúng commit. Kích thước thực tế
   được giữ nguyên; không trim/pad để giả thành 5%.
-- **Benchmark reproduction**: tái hiện đúng hàm/công thức trong repo benchmark,
-  kèm compatibility patch có khai báo. Không gọi nó là native paper.
+- **Official-source adapter**: chạy trực tiếp function của repo tác giả đã khóa
+  commit; adapter chỉ chuyển input/output và vá boundary import/seed/index.
 - **Synthetic**: sinh X/y mới nên không có `selected_indices.npy`; nó dùng contract
   và storage-matched table riêng.
 - **Proposed/ablation**: code trong package này, classwise coarsening, exact-budget,
@@ -154,9 +155,10 @@ skq run --config configs\pilot_adult_full_seed11.json `
   --max-estimated-operations 30000000000
 ```
 
-Đây mới là lệnh **full**. Nó đi qua cả 19 method và 5 learner; không phải lệnh
-2-method quick check. `skq plan` phải báo 18 phương pháp nén/sinh, 95 ô tổng,
-91 ô hợp contract và 4 ô C02–non-XGB là `NA_CONTRACT`. P04/P05 giữ
+Đây mới là lệnh **full**. Nó đi qua cả 20 method và 5 learner; không phải lệnh
+2-method quick check. `skq plan` phải báo 19 phương pháp nén/sinh, 100 ô tổng,
+96 ô được lên kế hoạch chạy;
+4 ô C02–non-XGB là `NA_CONTRACT`. P04/P05 giữ
 `GATE_LOCKED` cho tới khi base winner đã freeze; dependency bị thiếu không được
 coi là kết quả cuối. Chạy riêng
 một ô để debug:
