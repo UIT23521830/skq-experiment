@@ -10,7 +10,7 @@ Từ thư mục project:
 
 ```powershell
 cd C:\source\paper\skq_experiment
-python -m pip install -e ".[boosting,deep,data,dev]"
+python -m pip install -e ".[kaggle-full,data,dev]"
 python scripts\fetch_official_repos.py
 pytest
 skq doctor
@@ -75,10 +75,14 @@ Cell đầu tiên:
 ```bash
 !git clone https://github.com/<tai-khoan>/<ten-repo>.git /kaggle/working/skq_experiment
 %cd /kaggle/working/skq_experiment
-!python -m pip install -q -e ".[boosting,deep]"
+!python -m pip install -q -e ".[kaggle-full]"
 !python scripts/fetch_official_repos.py
 !skq doctor
 ```
+
+`kaggle-full` cài cả BDIS (`faiss-cpu`) và KIP-TDBench
+(`jax`, `neural-tangents`). Nếu `skq doctor` vẫn báo thiếu một trong các gói này,
+run tương ứng phải được xem là `BLOCKED`, không phải kết quả utility.
 
 Nếu Internet bị tắt, upload source dưới dạng Kaggle Dataset hoặc Notebook input,
 sau đó copy vào `/kaggle/working/skq_experiment`. Không sửa code trực tiếp trong
@@ -202,4 +206,3 @@ tra. Sau đó chạy `skq aggregate` để tái tạo leaderboard và kiểm tra
 - Không đổi method khi OOM rồi giữ nguyên tên trong bảng.
 - Không ghi metric không xác định thành 0.
 - Không chỉnh portfolio query, kernel hoặc budget sau khi đã xem test.
-

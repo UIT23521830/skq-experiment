@@ -119,14 +119,14 @@ cd C:\source\paper\skq_experiment
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install -e ".[boosting,deep,data,dev]"
+python -m pip install -e ".[kaggle-full,data,dev]"
 python scripts\fetch_official_repos.py
 pytest -q
 skq doctor
 skq smoke --config configs\s0_smoke.json
 ```
 
-`fetch_official_repos.py` kiểm tra đúng sáu commit trong lock file. Không commit
+`fetch_official_repos.py` kiểm tra đúng bảy commit trong lock file. Không commit
 các checkout này lên GitHub.
 
 ## 6. Chạy Adult một seed
