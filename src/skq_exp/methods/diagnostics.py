@@ -1,8 +1,10 @@
-"""File này tạo các ablation dùng để giải thích phần nào của SKQ có tác dụng.
+"""Các ablation nội bộ dùng để giải thích thành phần nào của SKQ có tác dụng.
 
-D02 thay herding bằng random nhưng giữ cách chia nhóm. D04 bỏ parent structure và
-chỉ giữ lớp. D05 dùng đúng dòng đã chọn của winner nhưng thay QP bằng trọng số đều
-trong nhóm, nhờ vậy mỗi so sánh chỉ thay một thành phần.
+Trạng thái: code của đề tài, không phải baseline paper độc lập. D02 thay herding
+bằng random nhưng giữ phân nhóm; D04 bỏ parent structure và chỉ giữ lớp; D05 giữ
+nguyên các dòng của winner nhưng thay QP bằng trọng số đều trong nhóm. Tất cả đều
+trả subset dòng thật. Chúng được đưa vào bài để mỗi phép so sánh chỉ thay một thành
+phần, từ đó tách đóng góp của structure, kernel herding và tối ưu trọng số.
 """
 
 from __future__ import annotations
@@ -60,4 +62,3 @@ def equal_group_weights(
         diagnostics={"source_method": base.method_id, "same_indices": True},
         timings=timings,
     )
-

@@ -1,8 +1,15 @@
-"""File này tái hiện CRAIG logistic bằng facility-location của repo tác giả.
+"""CRAIG feature-space dùng solver facility-location từ repo tác giả.
 
-Khoảng cách và lazy-greedy được lấy trực tiếp từ `lazy_greedy.py`. Vì phép tính
-pairwise là O(n²), runner phải qua preflight RAM/operations trước khi gọi file này.
-Native realized size được giữ nguyên khi quota lớp dùng phép làm tròn trần của repo.
+Trạng thái: adaptation mức R1, không phải CRAIG native và không được ghi là tái
+hiện y hệt paper. Code lấy ``FacilityLocation`` và lazy-greedy từ source chính
+thức, nhưng xây ma trận khoảng cách trực tiếp trong không gian feature thay vì
+pipeline gradient logistic đầy đủ của CRAIG. Cơ chế: chọn đại diện theo lớp bằng
+facility-location; trọng số là số điểm được gán cho mỗi đại diện. Loại đầu ra:
+tập con dòng thật có trọng số.
+
+Phương pháp được đưa vào bài để so sánh SKQ với họ submodular/facility-location,
+đồng thời minh bạch giới hạn tái hiện. Do pairwise O(n²), runner phải qua gate
+RAM/số phép tính; OOM là kết quả tài nguyên chứ không được đổi thuật toán.
 """
 
 from __future__ import annotations

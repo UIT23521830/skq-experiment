@@ -17,6 +17,12 @@ from skq_exp.methods.proposed.simplex_qp import solve_simplex_mean_match
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_every_registered_method_has_an_explanatory_note():
+    """Mỗi method phải tự mô tả vai trò/mức tái hiện để tránh ghi sai trong bài."""
+    missing = [method_id for method_id, spec in METHOD_SPECS.items() if not spec.note.strip()]
+    assert missing == []
+
+
 def test_adult_full_config_has_20_rows_and_five_learners():
     config = ExperimentConfig.from_json(ROOT / "configs" / "pilot_adult_full_seed11.json")
     assert len(config.method_ids) == 20

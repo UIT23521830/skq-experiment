@@ -1,8 +1,14 @@
-"""File này nối BDIS với implementation AAAI 2022 của tác giả.
+"""Adapter BDIS gọi implementation AAAI 2022 của tác giả đã khóa commit.
 
-Adapter giữ ngưỡng t1/t2 của demo gốc và trả đúng các representative mà upstream
-tạo. Faiss là dependency bắt buộc; nếu thiếu, run bị khóa thay vì đổi sang KMeans
-của sklearn rồi vẫn gọi tên BDIS.
+Trạng thái: official-source adapter; thuật toán chọn representative và ngưỡng
+``t1/t2`` đến từ source gốc, còn lớp bọc chỉ đổi dữ liệu sang contract chung và
+vá alias ``numpy.int`` cho NumPy mới. Đây không phải tái lập nguyên vẹn mọi thiết
+lập trong paper. Cơ chế: instance selection dựa trên cấu trúc mật độ/láng giềng
+của BDIS. Loại đầu ra: tập con dòng thật với kích thước native do BDIS quyết định.
+
+BDIS được đưa vào bài làm baseline chọn mẫu hiện đại và làm nguồn candidate cho
+P03. Faiss là dependency bắt buộc; nếu thiếu, run phải BLOCKED thay vì âm thầm
+đổi sang KMeans hay một thuật toán khác nhưng vẫn giữ tên BDIS.
 """
 
 from __future__ import annotations

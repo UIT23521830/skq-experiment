@@ -1,8 +1,14 @@
-"""File này gọi trực tiếp KIP hoặc MTT từ repo TDBench đã khóa commit.
+"""Adapter KIP và MTT từ repo benchmark TDBench đã khóa commit.
 
-Adapter không sao chép thuật toán. Nó nạp hàm của repo tác giả, đổi budget tổng
-sang số mẫu trên mỗi lớp theo contract TDBench và trả dữ liệu sinh cùng thông tin
-commit. Thiếu dependency sẽ thành BLOCKED có lý do, không đổi sang thuật toán khác.
+Trạng thái: benchmark-source adapter, không tuyên bố là native source của paper
+KIP/MTT hay tái lập toàn bộ thiết lập paper. Adapter gọi trực tiếp hàm TDBench và
+chỉ đổi budget tổng sang số mẫu mỗi lớp theo contract của repo. KIP sinh dữ liệu
+bằng kernel inducing points; MTT sinh dữ liệu bằng cách khớp quỹ đạo huấn luyện.
+Loại đầu ra của cả hai là bảng train tổng hợp, không phải subset dòng thật.
+
+KIP/MTT được đưa vào bài làm baseline dataset distillation mạnh để so sánh utility
+của một tập train rất nhỏ với SKQ. Thiếu JAX/PyTorch hoặc vượt ``max_rows`` phải
+trả BLOCKED/predicted_timeout, tuyệt đối không dùng fallback rồi giữ nguyên tên.
 """
 
 from __future__ import annotations

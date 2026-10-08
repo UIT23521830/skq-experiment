@@ -1,8 +1,15 @@
-"""File này ghép các khối SKQ thành một selector hoàn chỉnh.
+"""Engine của các phương pháp SKQ do đề tài này đề xuất.
 
-Nó chia budget theo structure×class, tạo RFF một lần, chọn dòng bằng herding rồi
-tối ưu trọng số trong từng nhóm. Đầu ra giữ exact budget, khối lượng của nhóm và
-các chẩn đoán cần để biết phương pháp có thật sự chạy đúng hay không.
+Trạng thái: implementation của nhóm tác giả dự án, không phải code từ paper đối
+chứng. P01/P02 dùng cấu trúc CoreTab, P03 dùng candidate BDIS, còn P04/P05 thêm
+query-loss ngoài-fold sau khi base winner đã được freeze. Cơ chế chung: chia exact
+budget theo structure×class, ánh xạ RFF, chọn dòng thật bằng kernel herding rồi
+tối ưu trọng số simplex-QP trong từng nhóm. Loại đầu ra: subset dòng thật có trọng
+số và đúng tổng budget.
+
+Các biến thể này là đóng góp chính cần được so với native, benchmark, synthetic
+và control. P04/P05 bị GATE_LOCKED trước dev freeze để tránh chọn cấu hình sau khi
+đã nhìn test; gate đó là quy tắc phương pháp luận, không phải code chưa hoàn tất.
 """
 
 from __future__ import annotations
@@ -225,4 +232,3 @@ class StructuredKQuadSelector(BaseSelector):
                 "total": total_time,
             },
         )
-

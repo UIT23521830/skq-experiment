@@ -1,8 +1,14 @@
-"""File này nối N01/N02 với CoreTab chính thức và xuất cấu trúc lá.
+"""Adapter N01/N02 gọi trực tiếp source CoreTab chính thức đã khóa commit.
 
-Native output giữ nguyên kích thước do CoreTab tạo, không trim/pad về 5%. Sau khi
-chạy, `structure_parent_ids_` mô tả lá/cụm của mọi dòng train để P01/P02 có thể
-dùng cùng structure nhưng tự phân bổ exact budget.
+Trạng thái: official-source adapter, tương đương đường chọn subset của source ở
+cấu hình đã ghi, nhưng không tuyên bố tái lập toàn bộ thí nghiệm trong paper vì
+dataset, learner và protocol đánh giá của SKQ được chuẩn hóa riêng. Cơ chế: dùng
+lá của Decision Tree hoặc XGBoost để tạo coreset và cấu trúc nhóm. Loại đầu ra:
+tập con dòng thật; kích thước native được giữ nguyên, không trim/pad về 5%.
+
+CoreTab được đưa vào bài vừa làm baseline mạnh có source chính thức, vừa cung cấp
+`structure_parent_ids_` để so sánh công bằng CoreTab gốc với P01/P02 dùng cùng
+cấu trúc nhưng áp dụng phân bổ, kernel herding và trọng số của SKQ.
 """
 
 from __future__ import annotations

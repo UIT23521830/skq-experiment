@@ -33,34 +33,99 @@ class MethodSpec:
 
 METHOD_SPECS = {
     spec.method_id: spec for spec in [
-        MethodSpec("c00_full_train", "FullTrain", "reference", "evaluator_only"),
-        MethodSpec("c02_stratified_random", "Stratified Random", "control", "implemented", allowed_learners=("xgb",), note="Confirmatory-only theo protocol"),
-        MethodSpec("n01_coretab_dt_subset", "CoreTab-DT Official", "native", "implemented"),
-        MethodSpec("n02_coretab_xgb_subset", "CoreTab-XGB Official", "native", "implemented"),
-        MethodSpec("n_bdis_native", "BDIS-native", "native", "implemented"),
-        MethodSpec("n_autocoreset_native", "AutoCoreset-native", "native", "implemented"),
+        MethodSpec(
+            "c00_full_train", "FullTrain", "reference", "evaluator_only",
+            note="Mốc trần dùng toàn bộ train; không phải phương pháp nén.",
+        ),
+        MethodSpec(
+            "c02_stratified_random", "Stratified Random", "control", "implemented",
+            allowed_learners=("xgb",),
+            note="Control cổ điển: subset thật, exact budget, confirmatory-only theo protocol.",
+        ),
+        MethodSpec(
+            "n01_coretab_dt_subset", "CoreTab-DT Official", "native", "implemented",
+            note="Official-source adapter; subset thật theo kích thước native CoreTab-DT.",
+        ),
+        MethodSpec(
+            "n02_coretab_xgb_subset", "CoreTab-XGB Official", "native", "implemented",
+            note="Official-source adapter; subset thật theo kích thước native CoreTab-XGB.",
+        ),
+        MethodSpec(
+            "n_bdis_native", "BDIS-native", "native", "implemented",
+            note="Official-source adapter; subset thật, cần faiss và giữ realized size upstream.",
+        ),
+        MethodSpec(
+            "n_autocoreset_native", "AutoCoreset-native", "native", "implemented",
+            note="Official-source adapter qua driver riêng; subset thật có trọng số và artifact gate.",
+        ),
         MethodSpec(
             "n_craig_native", "CRAIG feature-space (retired native label)",
             "native", "retired", note="Không tương đương full official logistic pipeline",
         ),
         MethodSpec(
             "a_craig_feature_space", "CRAIG feature-space adapter",
-            "adaptation", "implemented", note="R1 adapter; không claim native equivalence",
+            "adaptation", "implemented",
+            note="R1 feature-space adaptation; dùng upstream lazy-greedy, không claim native equivalence.",
         ),
-        MethodSpec("n_gcoreset_benchmark", "Gonzalez Coreset benchmark", "benchmark", "implemented"),
-        MethodSpec("n_leverage_benchmark", "Leverage benchmark", "benchmark", "implemented"),
-        MethodSpec("s_kip_tdbench", "KIP-TDBench", "synthetic", "implemented", output_kind="synthetic"),
-        MethodSpec("s_mtt_tdbench", "MTT-TDBench", "synthetic", "implemented", output_kind="synthetic"),
-        MethodSpec("s_tame_official", "TAME official", "synthetic", "implemented", output_kind="synthetic"),
-        MethodSpec("p00_structured_kquad", "Structured KQuad engine", "engine", "not_runnable"),
-        MethodSpec("p01_skq_coretab_dt", "SKQ-CoreTab-DT", "proposed", "implemented", True),
-        MethodSpec("p02_skq_coretab_xgb", "SKQ-CoreTab-XGB", "proposed", "implemented", True),
-        MethodSpec("p03_skq_bdis_filtered", "SKQ-BDIS-Filtered", "proposed", "implemented", True),
-        MethodSpec("p04_skq_lrq_sq", "SKQ-LRQ-SQ", "proposed", "implemented", True),
-        MethodSpec("p05_skq_lrq_mq", "SKQ-LRQ-MQ", "proposed", "implemented", True),
-        MethodSpec("d02_parent_structured_random", "Parent-Structured Random", "ablation", "implemented", True),
-        MethodSpec("d04_global_rff_quadrature", "Global RFF Quadrature", "ablation", "implemented"),
-        MethodSpec("d05_equal_group_weight", "Equal-Within-Group Weight", "ablation", "derived", True),
+        MethodSpec(
+            "n_gcoreset_benchmark", "Gonzalez Coreset benchmark", "benchmark", "implemented",
+            note="Benchmark-source adapter; farthest-first subset thật, không phải native paper source.",
+        ),
+        MethodSpec(
+            "n_leverage_benchmark", "Leverage benchmark", "benchmark", "implemented",
+            note="Benchmark-source adapter; PCA leverage subset thật, không phải native paper source.",
+        ),
+        MethodSpec(
+            "s_kip_tdbench", "KIP-TDBench", "synthetic", "implemented",
+            output_kind="synthetic",
+            note="TDBench-source adapter; sinh dữ liệu bằng kernel inducing points, có dependency/resource gate.",
+        ),
+        MethodSpec(
+            "s_mtt_tdbench", "MTT-TDBench", "synthetic", "implemented",
+            output_kind="synthetic",
+            note="TDBench-source adapter; sinh dữ liệu bằng trajectory matching, có resource gate.",
+        ),
+        MethodSpec(
+            "s_tame_official", "TAME official", "synthetic", "implemented",
+            output_kind="synthetic",
+            note="Official-source synthesis adapter; distribution matching, không claim full-paper reproduction.",
+        ),
+        MethodSpec(
+            "p00_structured_kquad", "Structured KQuad engine", "engine", "not_runnable",
+            note="Engine nội bộ của SKQ; không phải một dòng độc lập trong bảng utility.",
+        ),
+        MethodSpec(
+            "p01_skq_coretab_dt", "SKQ-CoreTab-DT", "proposed", "implemented", True,
+            note="Đề xuất: structure CoreTab-DT + RFF herding + simplex-QP.",
+        ),
+        MethodSpec(
+            "p02_skq_coretab_xgb", "SKQ-CoreTab-XGB", "proposed", "implemented", True,
+            note="Đề xuất: structure CoreTab-XGB + RFF herding + simplex-QP.",
+        ),
+        MethodSpec(
+            "p03_skq_bdis_filtered", "SKQ-BDIS-Filtered", "proposed", "implemented", True,
+            note="Đề xuất: candidate BDIS + phân bổ có cấu trúc + RFF herding + simplex-QP.",
+        ),
+        MethodSpec(
+            "p04_skq_lrq_sq", "SKQ-LRQ-SQ", "proposed", "implemented", True,
+            note="Đề xuất query-aware một learner; chỉ mở sau dev freeze.",
+        ),
+        MethodSpec(
+            "p05_skq_lrq_mq", "SKQ-LRQ-MQ", "proposed", "implemented", True,
+            note="Đề xuất query-aware nhiều learner; chỉ mở sau dev freeze.",
+        ),
+        MethodSpec(
+            "d02_parent_structured_random", "Parent-Structured Random", "ablation", "implemented", True,
+            note="Ablation: giữ structure và QP nhưng thay kernel herding bằng random.",
+        ),
+        MethodSpec(
+            "d04_global_rff_quadrature", "Global RFF Quadrature", "ablation", "implemented",
+            note="Ablation: bỏ parent structure, giữ class + RFF herding + QP.",
+        ),
+        MethodSpec(
+            "d05_equal_group_weight", "Equal-Within-Group Weight", "ablation", "derived", True,
+            note="Ablation: giữ index winner, thay simplex-QP bằng trọng số đều trong nhóm.",
+        ),
     ]
 }
 

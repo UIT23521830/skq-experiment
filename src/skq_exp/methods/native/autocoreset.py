@@ -1,8 +1,13 @@
-"""File này giữ boundary cho AutoCoreset chính thức.
+"""Boundary nhập kết quả AutoCoreset từ source chính thức đã khóa commit.
 
-Repo upstream cần một môi trường cũ và nhiều compatibility patch. Adapter chỉ mở
-chạy khi driver đã xuất `indices.npy` và `weights.npy` có manifest đúng commit;
-như vậy main environment không âm thầm sửa thuật toán rồi vẫn gọi là native.
+Trạng thái: official-source adapter chạy qua driver riêng; thuật toán upstream
+được giữ nguyên nhưng có vá tương thích API NumPy/sklearn, nên không tuyên bố môi
+trường chạy giống tuyệt đối paper. Cơ chế: AutoCoreset tự động xây coreset có
+trọng số cho bài toán logistic. Loại đầu ra: index dòng thật và trọng số native.
+
+AutoCoreset được đưa vào bài làm baseline coreset có trọng số và tối ưu tự động.
+File này không tự thay thuật toán: nó chỉ nhận artifact khi commit, fingerprint,
+index và trọng số đều qua gate. Thiếu artifact hợp lệ phải trả BLOCKED.
 """
 
 from __future__ import annotations
