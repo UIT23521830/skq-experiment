@@ -16,7 +16,7 @@ from .controls import StratifiedRandomSelector
 from .diagnostics import build_d02, build_d04
 from .native import AutoCoresetNativeSelector, BDISNativeSelector, CoreTabNativeSelector, CRAIGNativeSelector
 from .proposed.structured_kquad import StructuredKQuadSelector
-from .synthetic import TAMEOfficialGenerator, TDBenchGenerator
+from .synthetic import TDBenchGenerator
 
 
 @dataclass(frozen=True)
@@ -51,7 +51,6 @@ METHOD_SPECS = {
         MethodSpec("n_leverage_benchmark", "Leverage benchmark", "benchmark", "implemented"),
         MethodSpec("s_kip_tdbench", "KIP-TDBench", "synthetic", "implemented", output_kind="synthetic"),
         MethodSpec("s_mtt_tdbench", "MTT-TDBench", "synthetic", "implemented", output_kind="synthetic"),
-        MethodSpec("s_tame_official", "TAME official", "synthetic", "implemented", output_kind="synthetic"),
         MethodSpec("p00_structured_kquad", "Structured KQuad engine", "engine", "not_runnable"),
         MethodSpec("p01_skq_coretab_dt", "SKQ-CoreTab-DT", "proposed", "implemented", True),
         MethodSpec("p02_skq_coretab_xgb", "SKQ-CoreTab-XGB", "proposed", "implemented", True),
@@ -110,6 +109,4 @@ def build_generator(method_id: str, seed: int, *, external_root: str | Path, opt
     spec = get_method_spec(method_id)
     if spec.output_kind != "synthetic" or spec.status != "implemented":
         raise RuntimeError(f"{method_id} không phải generator synthetic runnable")
-    if method_id == "s_tame_official":
-        return TAMEOfficialGenerator(Path(external_root), seed, options)
     return TDBenchGenerator(method_id, Path(external_root), seed, options)

@@ -17,15 +17,12 @@ from skq_exp.methods.proposed.simplex_qp import solve_simplex_mean_match
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_adult_full_config_has_20_rows_and_five_learners():
+def test_adult_full_config_has_19_rows_and_five_learners():
     config = ExperimentConfig.from_json(ROOT / "configs" / "pilot_adult_full_seed11.json")
-    assert len(config.method_ids) == 20
+    assert len(config.method_ids) == 19
     assert config.learner_ids == ("lr", "rf", "xgb", "cat", "mlp")
     assert set(config.method_ids) <= set(METHOD_SPECS)
-    assert {
-        METHOD_SPECS[item].output_kind
-        for item in ("s_kip_tdbench", "s_mtt_tdbench", "s_tame_official")
-    } == {"synthetic"}
+    assert {METHOD_SPECS[item].output_kind for item in ("s_kip_tdbench", "s_mtt_tdbench")} == {"synthetic"}
     alias = ExperimentConfig.from_json(ROOT / "configs" / "pilot_adult_seed11.json")
     assert alias.method_ids == config.method_ids
 
@@ -35,7 +32,7 @@ def test_benchmark_selectors_return_exact_unique_indices(tmp_path):
     X = rng.normal(size=(80, 6))
     y = np.repeat([0, 1], 40)
     for method_id in ("n_gcoreset_benchmark", "n_leverage_benchmark"):
-        selector = build_selector(method_id, 11, external_root=ROOT / "external" / "repos")
+        selector = build_selector(method_id, 11, external_root=tmp_path)
         result = selector.select(X, y, 0.1)
         assert result.status == "success"
         assert result.realized_rows == 8
