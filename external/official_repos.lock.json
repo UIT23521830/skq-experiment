@@ -23,7 +23,7 @@
   "craig": {
     "url": "https://github.com/baharanm/craig.git",
     "commit_prefix": "b0374a",
-    "methods": ["n_craig_native"],
+    "methods": ["a_craig_feature_space"],
     "status": "adapter_ready_pairwise_resource_gate",
     "commit": "b0374a27f2503e9058ac529b556b8f5dc8b68577"
   },

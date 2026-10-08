@@ -39,7 +39,14 @@ METHOD_SPECS = {
         MethodSpec("n02_coretab_xgb_subset", "CoreTab-XGB Official", "native", "implemented"),
         MethodSpec("n_bdis_native", "BDIS-native", "native", "implemented"),
         MethodSpec("n_autocoreset_native", "AutoCoreset-native", "native", "implemented"),
-        MethodSpec("n_craig_native", "CRAIG-native", "native", "implemented"),
+        MethodSpec(
+            "n_craig_native", "CRAIG feature-space (retired native label)",
+            "native", "retired", note="Không tương đương full official logistic pipeline",
+        ),
+        MethodSpec(
+            "a_craig_feature_space", "CRAIG feature-space adapter",
+            "adaptation", "implemented", note="R1 adapter; không claim native equivalence",
+        ),
         MethodSpec("n_gcoreset_benchmark", "Gonzalez Coreset benchmark", "benchmark", "implemented"),
         MethodSpec("n_leverage_benchmark", "Leverage benchmark", "benchmark", "implemented"),
         MethodSpec("s_kip_tdbench", "KIP-TDBench", "synthetic", "implemented", output_kind="synthetic"),
@@ -78,7 +85,7 @@ def build_selector(method_id: str, seed: int, *, n_components: int = 256, extern
         return BDISNativeSelector(repo_root, seed, options)
     if method_id == "n_autocoreset_native":
         return AutoCoresetNativeSelector(repo_root, seed, options)
-    if method_id == "n_craig_native":
+    if method_id == "a_craig_feature_space":
         return CRAIGNativeSelector(repo_root, seed, options)
     if method_id == "n_gcoreset_benchmark":
         return GonzalezBenchmarkSelector(repo_root, seed)
@@ -89,7 +96,7 @@ def build_selector(method_id: str, seed: int, *, n_components: int = 256, extern
     if method_id == "d04_global_rff_quadrature":
         return build_d04(seed, n_components)
     if method_id in {"p01_skq_coretab_dt", "p02_skq_coretab_xgb", "p03_skq_bdis_filtered", "p04_skq_lrq_sq", "p05_skq_lrq_mq"}:
-        default_alpha = 0.8 if method_id in {"p04_skq_lrq_sq", "p05_skq_lrq_mq"} else 1.0
+        default_alpha = 0.5 if method_id in {"p04_skq_lrq_sq", "p05_skq_lrq_mq"} else 1.0
         return StructuredKQuadSelector(
             method_id, seed=seed, n_components=n_components,
             bandwidth_multiplier=float(options.get("bandwidth_multiplier", 1.0)),

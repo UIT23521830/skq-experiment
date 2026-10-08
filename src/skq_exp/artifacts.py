@@ -115,7 +115,7 @@ class ArtifactLayout:
         payload_sha256 = {path.name: sha256_file(path) for path in payload_paths}
         artifact_bytes = int(sum(path.stat().st_size for path in payload_paths))
         artifact_manifest = {
-            "schema_version": 1,
+            "schema_version": 3,
             "output_kind": output_kind,
             "identity": identity,
             "identity_hash": stable_hash(identity),

@@ -16,6 +16,7 @@ import numpy as np
 VALID_STATUSES = {
     "success", "failed", "oom", "predicted_oom", "predicted_timeout", "timeout", "blocked",
     "budget_infeasible", "na_contract", "structure_collapsed", "storage_limit",
+    "gate_locked",
 }
 
 

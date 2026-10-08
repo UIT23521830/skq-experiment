@@ -77,17 +77,24 @@ def run_config(
     if config.stage_id == "s0_smoke":
         return run_smoke(config)
     datasets = [dataset_id] if dataset_id else list(config.dataset_ids)
+    freeze_manifest = _load_freeze_manifest(config, required=config.stage_id == "s2_confirm")
     methods = [method_id] if method_id else list(config.method_ids)
+    if config.stage_id == "s2_confirm" and method_id is None:
+        role_map = freeze_manifest["method_roles"]
+        methods.extend(str(role_map[role]) for role in config.frozen_method_roles)
+        methods = list(dict.fromkeys(methods))
     learners = [learner_id] if learner_id else list(config.learner_ids)
-    if config.stage_id == "s2_confirm":
-        freeze = config.paths.artifact_root / "freeze" / "freeze_manifest.json"
-        if not freeze.exists():
-            raise RuntimeError(f"Chưa có freeze manifest: {freeze}")
     ledger: list[dict[str, Any]] = []
     layout = ArtifactLayout(config.paths.artifact_root)
     for current_dataset in datasets:
         data = load_processed(current_dataset, config.paths.processed_root)
         data_fingerprint = _dataset_fingerprint(config, current_dataset)
+        if config.stage_id == "s2_confirm":
+            expected = freeze_manifest["dataset_fingerprints"].get(current_dataset)
+            if expected != data_fingerprint:
+                raise RuntimeError(
+                    f"Freeze fingerprint không khớp {current_dataset}: {expected} != {data_fingerprint}"
+                )
         eval_name = "test" if config.stage_id == "s2_confirm" else "dev"
         selection_cache: dict[tuple[str, int], SelectionResult] = {}
         structure_cache: dict[tuple[str, int], dict[str, np.ndarray]] = {}
@@ -110,7 +117,8 @@ def run_config(
                 if result is None:
                     result = _produce_or_block(
                         current_method, selector_seed, config, data, current_dataset,
-                        selection_cache, structure_cache, query_cache,
+                        selection_cache, structure_cache, query_cache, data_fingerprint,
+                        freeze_manifest,
                     )
                 if result.status == "success":
                     _attach_generic_artifact_diagnostics(result, np.asarray(data["y_train"]))
@@ -206,7 +214,10 @@ def run_config(
     return ledger
 
 
-def _produce_or_block(method_id, seed, config, data, dataset_id, selection_cache, structure_cache, query_cache):
+def _produce_or_block(
+    method_id, seed, config, data, dataset_id, selection_cache, structure_cache,
+    query_cache, data_fingerprint, freeze_manifest,
+):
     y_train = np.asarray(data["y_train"])
     X_train = np.asarray(data["X_train"])
     requested = max(1, int(round(len(y_train) * config.budget_ratio)))
@@ -214,6 +225,39 @@ def _produce_or_block(method_id, seed, config, data, dataset_id, selection_cache
         indices = np.arange(len(y_train), dtype=np.int64)
         return SelectionResult(indices, np.ones(len(indices)), len(indices), len(indices), "full", method_id)
     options = dict((config.method_options or {}).get(method_id, {}))
+    if options.get("parent_source") == "@base_winner_structure":
+        if freeze_manifest is None or not freeze_manifest.get("base_winner_structure_source"):
+            return SelectionResult.failure(
+                method_id, "gate_locked", requested,
+                "Method cần frozen base_winner_structure_source",
+            )
+        options["parent_source"] = freeze_manifest["base_winner_structure_source"]
+    if options.get("source_method") == "@proposed_winner":
+        frozen_roles = (freeze_manifest or {}).get("method_roles", {})
+        if not frozen_roles.get("proposed_winner"):
+            return SelectionResult.failure(
+                method_id, "gate_locked", requested,
+                "Method cần frozen proposed_winner",
+            )
+        options["source_method"] = frozen_roles["proposed_winner"]
+    if method_id in {"p04_skq_lrq_sq", "p05_skq_lrq_mq"}:
+        if freeze_manifest is None:
+            return SelectionResult.failure(
+                method_id, "gate_locked", requested,
+                "LRQ chỉ mở sau khi freeze base winner trên dev",
+            )
+        frozen_source = freeze_manifest.get("base_winner_structure_source")
+        frozen_base = freeze_manifest.get("base_winner_method_id")
+        if not frozen_source or not frozen_base:
+            return SelectionResult.failure(
+                method_id, "gate_locked", requested,
+                "Freeze manifest thiếu base_winner_method_id/base_winner_structure_source",
+            )
+        if options.get("parent_source") != frozen_source:
+            return SelectionResult.failure(
+                method_id, "gate_locked", requested,
+                f"LRQ parent_source={options.get('parent_source')} không khớp frozen source={frozen_source}",
+            )
     if method_id == "n_autocoreset_native":
         processed = config.paths.processed_root / dataset_id
         fingerprint = stable_hash({
@@ -226,7 +270,11 @@ def _produce_or_block(method_id, seed, config, data, dataset_id, selection_cache
             str(config.paths.artifact_root / "native" / "autocoreset" / dataset_id / f"ss{seed}"),
         )
     spec = get_method_spec(method_id)
-    estimate = estimate_selection_cost(method_id, len(y_train), X_train.shape[1], requested, n_classes=len(np.unique(y_train)))
+    estimate = estimate_selection_cost(
+        method_id, len(y_train), X_train.shape[1], requested,
+        rff_components=int(options.get("n_components", 256)),
+        n_classes=len(np.unique(y_train)),
+    )
     try:
         enforce_preflight(estimate, config.resource)
     except ResourceLimitError as error:
@@ -245,7 +293,10 @@ def _produce_or_block(method_id, seed, config, data, dataset_id, selection_cache
             base = _load_selection_artifact(config, dataset_id, source, seed)
         if base is None:
             return SelectionResult.failure(method_id, "blocked", requested, f"D05 cần source selection chạy trước: {source}")
-        parent_result = _resolve_structure(options, seed, structure_cache, config, dataset_id)
+        parent_result = _resolve_structure(
+            options, seed, structure_cache, config, dataset_id,
+            np.asarray(data["row_ids_train"]), data_fingerprint,
+        )
         if isinstance(parent_result, str):
             return SelectionResult.failure(method_id, "blocked", requested, parent_result)
         group_ids = make_group_ids(parent_result.get("parent_ids"), y_train)
@@ -260,7 +311,10 @@ def _produce_or_block(method_id, seed, config, data, dataset_id, selection_cache
     kwargs: dict[str, Any] = {"row_ids": np.asarray(data["row_ids_train"]), "resource_guard": guard}
     structure = None
     if spec.needs_parent:
-        structure = _resolve_structure(options, seed, structure_cache, config, dataset_id)
+        structure = _resolve_structure(
+            options, seed, structure_cache, config, dataset_id,
+            np.asarray(data["row_ids_train"]), data_fingerprint,
+        )
         if isinstance(structure, str):
             return SelectionResult.failure(method_id, "blocked", requested, structure)
         kwargs["parent_ids"] = structure["parent_ids"]
@@ -299,16 +353,26 @@ def _produce_or_block(method_id, seed, config, data, dataset_id, selection_cache
     if getattr(selector, "structure_parent_ids_", None) is not None:
         structure = {
             "parent_ids": np.asarray(selector.structure_parent_ids_, dtype=np.int64),
+            "row_ids": np.asarray(data["row_ids_train"], dtype=np.int64),
+            "candidate_mask": np.asarray(
+                getattr(selector, "candidate_mask_", None)
+                if getattr(selector, "candidate_mask_", None) is not None
+                else np.ones(len(y_train), dtype=bool),
+                dtype=bool,
+            ),
             "_producer_total_seconds": np.asarray(result.timings.get("total", 0.0), dtype=np.float64),
         }
-        if getattr(selector, "candidate_mask_", None) is not None:
-            structure["candidate_mask"] = np.asarray(selector.candidate_mask_, dtype=bool)
         structure_cache[(method_id, seed)] = structure
-        _save_structure(config, dataset_id, method_id, seed, structure, result)
+        _save_structure(
+            config, dataset_id, method_id, seed, structure, result, data_fingerprint,
+        )
     return result
 
 
-def _resolve_structure(options, seed, structure_cache, config, dataset_id):
+def _resolve_structure(
+    options, seed, structure_cache, config, dataset_id, expected_row_ids,
+    data_fingerprint,
+):
     source = options.get("parent_source")
     if not source:
         return "Thiếu method_options.parent_source; runner không tự đoán structure winner"
@@ -319,25 +383,131 @@ def _resolve_structure(options, seed, structure_cache, config, dataset_id):
             dataset_id / str(source) / f"ss{seed}" / "structure.npz"
         )
         if path.exists():
-            with np.load(path) as saved:
-                structure = {key: saved[key] for key in saved.files}
+            metadata_path = path.with_name("structure.json")
+            if not metadata_path.exists():
+                return f"Structure thiếu metadata provenance: {metadata_path}"
+            try:
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                required_meta = {
+                    "producer_method_id", "producer_repository_commit",
+                    "dataset_fingerprint", "split_fingerprint", "extraction_rule", "seed",
+                }
+                if not required_meta <= set(metadata):
+                    missing = sorted(required_meta - set(metadata))
+                    return f"Structure metadata thiếu trường: {missing}"
+                expected_split = sha256_file(
+                    config.paths.processed_root / dataset_id / "split_manifest.json"
+                )
+                if metadata["producer_method_id"] != str(source) or int(metadata["seed"]) != int(seed):
+                    return "Structure producer/seed không khớp request"
+                if metadata["dataset_fingerprint"] != data_fingerprint:
+                    return "Structure dataset fingerprint không khớp"
+                if metadata["split_fingerprint"] != expected_split:
+                    return "Structure split fingerprint không khớp"
+                with np.load(path) as saved:
+                    required_arrays = {"row_ids", "stratum_ids", "candidate_mask"}
+                    if not required_arrays <= set(saved.files):
+                        return f"Structure NPZ thiếu arrays: {sorted(required_arrays - set(saved.files))}"
+                    row_ids = np.asarray(saved["row_ids"], dtype=np.int64)
+                    if not np.array_equal(row_ids, np.asarray(expected_row_ids, dtype=np.int64)):
+                        return "Structure row IDs không round-trip với train split"
+                    structure = {
+                        "row_ids": row_ids,
+                        "parent_ids": np.asarray(saved["stratum_ids"], dtype=np.int64),
+                        "candidate_mask": np.asarray(saved["candidate_mask"], dtype=bool),
+                        "_producer_total_seconds": np.asarray(
+                            saved["_producer_total_seconds"]
+                            if "_producer_total_seconds" in saved.files else 0.0,
+                            dtype=np.float64,
+                        ),
+                    }
+            except (OSError, ValueError, TypeError, KeyError) as error:
+                return f"Structure artifact không đọc được: {error!r}"
             structure_cache[(str(source), seed)] = structure
         else:
             return f"Structure source chưa chạy thành công trước method này: {source}, seed={seed}"
     return structure
 
 
-def _save_structure(config, dataset_id, method_id, seed, structure, result):
+def _save_structure(
+    config, dataset_id, method_id, seed, structure, result, data_fingerprint,
+):
     root = config.paths.artifact_root / "structures" / config.experiment_id / dataset_id / method_id / f"ss{seed}"
     root.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(root / "structure.npz", **structure)
+    row_ids = np.asarray(structure["row_ids"], dtype=np.int64)
+    stratum_ids = np.asarray(structure["parent_ids"], dtype=np.int64)
+    candidate_mask = np.asarray(structure["candidate_mask"], dtype=bool)
+    if not (len(row_ids) == len(stratum_ids) == len(candidate_mask)):
+        raise ValueError("Structure arrays phải cùng số dòng")
+    np.savez_compressed(
+        root / "structure.npz",
+        row_ids=row_ids,
+        stratum_ids=stratum_ids,
+        candidate_mask=candidate_mask,
+        _producer_total_seconds=np.asarray(
+            structure.get("_producer_total_seconds", 0.0), dtype=np.float64
+        ),
+    )
     atomic_json(root / "structure.json", {
-        "producer_method": method_id, "selector_seed": seed,
-        "n_rows": int(len(structure["parent_ids"])),
-        "n_groups": int(len(np.unique(structure["parent_ids"]))),
+        "schema_version": 3,
+        "producer_method_id": method_id,
+        "producer_repository_commit": result.diagnostics.get(
+            "upstream_commit", f"skq-exp-{__version__}"
+        ),
+        "dataset_id": dataset_id,
+        "dataset_fingerprint": data_fingerprint,
+        "split_fingerprint": sha256_file(
+            config.paths.processed_root / dataset_id / "split_manifest.json"
+        ),
+        "extraction_rule": _structure_extraction_rule(method_id),
+        "seed": seed,
+        "n_rows": int(len(stratum_ids)),
+        "n_groups": int(len(np.unique(stratum_ids))),
         "selection_status": result.status,
         "diagnostics": result.diagnostics,
     })
+
+
+def _structure_extraction_rule(method_id: str) -> str:
+    rules = {
+        "n01_coretab_dt_subset": "CoreTab-DT apply leaf ID on every train row",
+        "n02_coretab_xgb_subset": "CoreTab-XGB pred_leaf vector on every train row",
+        "n_bdis_native": "BDIS candidate mask with class-labelled parent strata",
+    }
+    return rules.get(method_id, "registered producer structure")
+
+
+def _load_freeze_manifest(
+    config: ExperimentConfig, *, required: bool,
+) -> dict[str, Any] | None:
+    path = config.paths.artifact_root / "freeze" / "freeze_manifest.json"
+    if not path.exists():
+        if required:
+            raise RuntimeError(f"Chưa có freeze manifest: {path}")
+        return None
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise RuntimeError(f"Freeze manifest không đọc được: {error!r}") from error
+    if manifest.get("schema_version") != 3:
+        raise RuntimeError("Freeze manifest phải dùng schema_version=3")
+    required_fields = {"config_hash", "code_commit", "dataset_fingerprints"}
+    missing = required_fields - set(manifest)
+    if missing:
+        raise RuntimeError(f"Freeze manifest thiếu trường: {sorted(missing)}")
+    if config.stage_id == "s2_confirm":
+        role_map = manifest.get("method_roles")
+        if not isinstance(role_map, dict):
+            raise RuntimeError("Freeze manifest thiếu method_roles")
+        from ..methods import METHOD_SPECS
+
+        for role in config.frozen_method_roles:
+            method_id = role_map.get(role)
+            if method_id not in METHOD_SPECS or METHOD_SPECS[method_id].status == "not_runnable":
+                raise RuntimeError(f"Freeze role {role} không resolve tới runnable method")
+        if not isinstance(manifest.get("dataset_fingerprints"), dict):
+            raise RuntimeError("Freeze dataset_fingerprints phải là object")
+    return manifest
 
 
 def _load_selection_artifact(config, dataset_id, method_id, seed):
@@ -525,7 +695,7 @@ def _method_artifact_identity(
     data_fingerprint: str,
 ) -> dict[str, Any]:
     return {
-        "schema_version": 1,
+        "schema_version": 3,
         "experiment_id": config.experiment_id,
         "protocol_id": config.protocol_id,
         "stage_id": config.stage_id,

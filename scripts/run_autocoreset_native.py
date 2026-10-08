@@ -21,6 +21,7 @@ sys.path.insert(0, str(PROJECT / "src"))
 
 from skq_exp.artifacts import atomic_json, sha256_file, stable_hash  # noqa: E402
 from skq_exp.config import ExperimentConfig  # noqa: E402
+from skq_exp.methods.native.common import verify_locked_repo  # noqa: E402
 
 
 def main() -> None:
@@ -32,6 +33,7 @@ def main() -> None:
     config = ExperimentConfig.from_json(args.config)
     processed = config.paths.processed_root / args.dataset
     repo = config.paths.external_root / "autocoreset"
+    locked_commit = verify_locked_repo(repo)
     output = config.paths.artifact_root / "native" / "autocoreset" / args.dataset / f"ss{args.seed}"
     X = np.load(processed / "X_train.npy")
     y = np.load(processed / "y_train.npy")
@@ -70,14 +72,19 @@ def main() -> None:
     finally:
         sys.path.pop(0)
     indices = _map_rows_back(X, y_native, np.asarray(C), np.asarray(y_c))
+    weights = np.asarray(weights, dtype=np.float64).reshape(-1)
+    if (
+        len(indices) != len(weights) or len(np.unique(indices)) != len(indices)
+        or not np.isfinite(weights).all() or np.any(weights < 0) or weights.sum() <= 0
+    ):
+        raise RuntimeError("AutoCoreset output vi phạm unique-index/weight contract")
     output.mkdir(parents=True, exist_ok=True)
     np.save(output / "indices.npy", indices)
-    np.save(output / "weights.npy", np.asarray(weights, dtype=np.float64))
-    commit = _git_commit(repo)
+    np.save(output / "weights.npy", weights)
     atomic_json(output / "manifest.json", {
         "method_id": "n_autocoreset_native",
         "upstream_repo": "https://github.com/alaamaalouf/AutoCoreset.git",
-        "upstream_commit": commit,
+        "upstream_commit": locked_commit,
         "dataset_id": args.dataset,
         "dataset_fingerprint": fingerprint,
         "selector_seed": args.seed,
@@ -125,11 +132,6 @@ def _map_rows_back(X, y, C, y_c):
             raise RuntimeError("Không thể round-trip một dòng AutoCoreset về train index")
         mapped.append(buckets[key].pop(0))
     return np.asarray(mapped, dtype=np.int64)
-
-
-def _git_commit(repo: Path) -> str:
-    import subprocess
-    return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
 
 
 if __name__ == "__main__":

@@ -32,31 +32,77 @@ SPLIT_SEED = 20_261_002
 
 
 def fetch_dataset(dataset_id: str, raw_root: str | Path, *, overwrite: bool = False) -> Path:
-    """Tải raw public data đã đăng ký; hiện tự động hóa Adult trước cho pilot."""
+    """Tải/cache raw snapshot của mọi public dataset đã đăng ký."""
     get_dataset_spec(dataset_id)
     output = Path(raw_root) / dataset_id
-    if dataset_id != "adult_uci2_v1":
-        raise RuntimeError(
-            f"{dataset_id} chưa có downloader tự động; xem README để tải từ nguồn chính thức"
-        )
-    expected = [output / "adult.data", output / "adult.test", output / "adult.names"]
+    expected_names = {
+        "adult_uci2_v1": ("adult.data", "adult.test", "adult.names"),
+        "letter_uci59_v1": ("letter-recognition.data",),
+        "covertype_uci31_v1": ("covtype.data.gz",),
+        "creditcard_ulb2013_v1": ("creditcard.csv",),
+        "jannis_openml41168_v1": ("openml_snapshot.joblib",),
+        "helena_openml41169_v1": ("openml_snapshot.joblib",),
+    }
+    expected = [output / name for name in expected_names[dataset_id]]
     if all(path.exists() for path in expected) and not overwrite:
         return output
     output.mkdir(parents=True, exist_ok=True)
-    archive = output / "adult.zip"
-    url = "https://archive.ics.uci.edu/static/public/2/adult.zip"
+    if dataset_id == "adult_uci2_v1":
+        _download_zip_members(
+            "https://archive.ics.uci.edu/static/public/2/adult.zip",
+            output, set(expected_names[dataset_id]), "adult.zip",
+        )
+    elif dataset_id == "letter_uci59_v1":
+        _download_zip_members(
+            "https://archive.ics.uci.edu/static/public/59/letter+recognition.zip",
+            output, set(expected_names[dataset_id]), "letter.zip",
+        )
+    elif dataset_id == "covertype_uci31_v1":
+        _download_zip_members(
+            "https://archive.ics.uci.edu/static/public/31/covertype.zip",
+            output, set(expected_names[dataset_id]), "covertype.zip",
+        )
+    elif dataset_id == "creditcard_ulb2013_v1":
+        try:
+            import kagglehub
+        except ImportError as error:
+            raise RuntimeError(
+                "Credit Card cần kagglehub hoặc file creditcard.csv đặt trong raw snapshot"
+            ) from error
+        downloaded = Path(kagglehub.dataset_download("mlg-ulb/creditcardfraud"))
+        matches = list(downloaded.rglob("creditcard.csv"))
+        if len(matches) != 1:
+            raise RuntimeError("Kaggle snapshot không chứa đúng một creditcard.csv")
+        shutil.copy2(matches[0], output / "creditcard.csv")
+    else:
+        data_id = 41168 if "jannis" in dataset_id else 41169
+        bunch = fetch_openml(data_id=data_id, as_frame=True, parser="auto")
+        joblib.dump(
+            {"data_id": data_id, "X": bunch.data, "y": bunch.target},
+            output / "openml_snapshot.joblib",
+        )
+    if not all(path.exists() for path in expected):
+        raise RuntimeError(f"Snapshot {dataset_id} thiếu file: {[p.name for p in expected if not p.exists()]}")
+    return output
+
+
+def _download_zip_members(
+    url: str, output: Path, required_names: set[str], archive_name: str,
+) -> None:
+    archive = output / archive_name
     with urllib.request.urlopen(url, timeout=120) as response, archive.open("wb") as stream:
         shutil.copyfileobj(response, stream)
     with zipfile.ZipFile(archive) as zipped:
-        safe_members = [name for name in zipped.namelist() if Path(name).name in {"adult.data", "adult.test", "adult.names"}]
-        if len(safe_members) < 3:
-            raise RuntimeError("Archive Adult thiếu file chuẩn")
+        safe_members = [
+            name for name in zipped.namelist() if Path(name).name in required_names
+        ]
+        if {Path(name).name for name in safe_members} != required_names:
+            raise RuntimeError(f"Archive thiếu file chuẩn: {sorted(required_names)}")
         for member in safe_members:
             target = output / Path(member).name
             with zipped.open(member) as source, target.open("wb") as destination:
                 shutil.copyfileobj(source, destination)
     archive.unlink(missing_ok=True)
-    return output
 
 
 def prepare_dataset(
@@ -133,6 +179,10 @@ def prepare_dataset(
         "status": "prepared",
         "dataset": asdict(spec),
         "fit_scope": "preprocessor and label encoder fitted on train only",
+        "raw_files_sha256": {
+            path.relative_to(Path(raw_root) / dataset_id).as_posix(): sha256_file(path)
+            for path in sorted((Path(raw_root) / dataset_id).rglob("*")) if path.is_file()
+        },
         "artifacts_sha256": {path.name: sha256_file(path) for path in files},
     })
     return manifest_path
@@ -161,8 +211,16 @@ def _read_and_split(spec: DatasetSpec, raw_dir: Path):
         return _credit(raw_dir)
     if spec.dataset_id in {"jannis_openml41168_v1", "helena_openml41169_v1"}:
         data_id = 41168 if "jannis" in spec.dataset_id else 41169
-        bunch = fetch_openml(data_id=data_id, as_frame=True, parser="auto")
-        X, y = bunch.data, bunch.target
+        snapshot = raw_dir / "openml_snapshot.joblib"
+        if snapshot.exists():
+            saved = joblib.load(snapshot)
+            if int(saved.get("data_id", -1)) != data_id:
+                raise ValueError(f"OpenML snapshot data_id không khớp {data_id}")
+            X, y = saved["X"], saved["y"]
+        else:
+            raise FileNotFoundError(
+                f"Thiếu {snapshot}; chạy fetch-data để khóa raw OpenML snapshot"
+            )
         split = _stratified_split(np.asarray(y), SPLIT_SEED)
         return X, y, split, np.arange(len(X), dtype=np.int64)
     raise KeyError(spec.dataset_id)

@@ -1,17 +1,19 @@
 {
-  "schema_version": 1,
+  "schema_version": 3,
   "experiment_id": "public_static_confirm_v1",
   "protocol_id": "static_tabular_v1",
   "stage_id": "s2_confirm",
+  "evidence_role": "confirmatory",
+  "split_id": "registered_split_v1",
   "dataset_ids": [
     "adult_uci2_v1", "creditcard_ulb2013_v1", "letter_uci59_v1",
     "covertype_uci31_v1", "jannis_openml41168_v1", "helena_openml41169_v1"
   ],
   "method_ids": [
     "c02_stratified_random", "d02_parent_structured_random",
-    "d04_global_rff_quadrature", "d05_equal_group_weight",
-    "FROZEN_PUBLISHED_REFERENCE", "FROZEN_PROPOSED_WINNER"
+    "d04_global_rff_quadrature", "d05_equal_group_weight"
   ],
+  "frozen_method_roles": ["published_reference", "proposed_winner"],
   "learner_ids": ["xgb"],
   "budget_ratio": 0.05,
   "split_seed": 20261002,
@@ -36,6 +38,16 @@
     "save_models": false,
     "save_predictions": true,
     "save_probabilities": true
+  },
+  "method_options": {
+    "d02_parent_structured_random": {
+      "parent_source": "@base_winner_structure",
+      "n_components": 256
+    },
+    "d05_equal_group_weight": {
+      "source_method": "@proposed_winner",
+      "parent_source": "@base_winner_structure"
+    }
   }
 }
 

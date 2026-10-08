@@ -11,19 +11,29 @@ from dataclasses import dataclass
 import numpy as np
 
 
-def median_bandwidth(X: np.ndarray, seed: int, max_points: int = 2048) -> float:
+def bandwidth_with_landmarks(
+    X: np.ndarray, seed: int, max_points: int = 2048,
+) -> tuple[float, np.ndarray]:
     if len(X) < 2:
-        return 1.0
+        return 1.0, np.arange(len(X), dtype=np.int64)
     rng = np.random.default_rng(seed)
     take = min(len(X), max_points)
-    sample = X[rng.choice(len(X), size=take, replace=False)].astype(np.float64, copy=False)
+    landmark_indices = rng.choice(len(X), size=take, replace=False).astype(np.int64)
+    sample = X[landmark_indices].astype(np.float64, copy=False)
     # Lấy các cặp ngẫu nhiên để tránh ma trận khoảng cách bậc hai.
     pairs = min(200_000, take * 32)
     left = rng.integers(0, take, size=pairs)
     right = rng.integers(0, take, size=pairs)
     distance = np.linalg.norm(sample[left] - sample[right], axis=1)
     positive = distance[distance > 0]
-    return float(np.median(positive)) if positive.size else 1.0
+    sigma = float(np.median(positive)) if positive.size else 1.0
+    return sigma, landmark_indices
+
+
+def median_bandwidth(X: np.ndarray, seed: int, max_points: int = 2048) -> float:
+    """Compatibility API; selector dùng cả landmark IDs từ helper phía trên."""
+    sigma, _ = bandwidth_with_landmarks(X, seed, max_points)
+    return sigma
 
 
 @dataclass
@@ -34,10 +44,12 @@ class RBFRandomFeatures:
     dtype: str = "float32"
 
     def fit(self, X: np.ndarray) -> "RBFRandomFeatures":
-        sigma = median_bandwidth(X, self.seed) * self.bandwidth_multiplier
+        base_sigma, landmark_indices = bandwidth_with_landmarks(X, self.seed)
+        sigma = base_sigma * self.bandwidth_multiplier
         if not np.isfinite(sigma) or sigma <= 0:
             raise ValueError("Bandwidth phải hữu hạn và dương")
         self.sigma_ = float(sigma)
+        self.landmark_indices_ = landmark_indices
         rng = np.random.default_rng(self.seed)
         self.omega_ = rng.normal(
             0.0, 1.0 / self.sigma_, size=(X.shape[1], self.n_components)

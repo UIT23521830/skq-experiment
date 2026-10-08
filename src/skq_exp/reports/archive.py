@@ -85,7 +85,7 @@ def pack_experiment(
     raw_bytes = int(sum(path.stat().st_size for path, _ in files))
     max_bytes = int(max_archive_mb * 1024 ** 2)
     plan = {
-        "schema_version": 1,
+        "schema_version": 3,
         "profile": profile,
         "experiment_id": experiment_id,
         "file_count": len(files),
