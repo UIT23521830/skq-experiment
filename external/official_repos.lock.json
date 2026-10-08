@@ -40,5 +40,12 @@
     "methods": ["s_kip_tdbench", "s_mtt_tdbench"],
     "status": "adapter_ready_dependency_and_max_rows_gate",
     "commit": "0b3ee85065c5b51372e59c31c699fd637a13a357"
+  },
+  "tame": {
+    "url": "https://github.com/eduard-b/TAME.git",
+    "commit_prefix": "ac15fc",
+    "methods": ["s_tame_official"],
+    "status": "adapter_ready_torch_and_max_rows_gate",
+    "commit": "ac15fc12fa6f3f7c2b53e1ce5e43acda3a0fdaca"
   }
 }
