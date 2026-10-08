@@ -1,0 +1,277 @@
+# SKQ Experiment — code thực nghiệm độc lập
+
+Project này hiện thực hóa ma trận thực nghiệm cho **Structured Kernel Quadrature
+(SKQ)** trên dữ liệu bảng. Đây là project mới, tách khỏi code nghiên cứu cũ. Một
+người không có lịch sử trao đổi vẫn có thể dùng README này để hiểu bài toán, tải
+dữ liệu, chạy một dataset, đọc artifact và biết ô nào đủ điều kiện đưa vào bài.
+
+## 1. Câu hỏi nghiên cứu
+
+Ta có tập train `D={(x_i,y_i)}` và budget `m=round(r×|D|)`. Mục tiêu là tạo một
+tập train nhỏ hơn nhưng vẫn giữ:
+
+1. utility trên nhiều downstream learner;
+2. phân phối lớp và vùng cấu trúc quan trọng;
+3. chi phí chọn, train, lưu trữ có lợi so với FullTrain;
+4. khả năng tái lập bằng seed, commit và artifact bất biến.
+
+Phương pháp đề xuất dùng `parent structure × class` để chia nhóm, cấp exact quota,
+biểu diễn RBF bằng Random Fourier Features (RFF), chọn điểm bằng kernel herding và
+tìm trọng số không âm tổng bằng khối lượng nhóm qua simplex-QP. P04/P05 ghép thêm
+OOF query loss để bảo toàn vùng khó của một hoặc nhiều learner mà không dùng
+dev/test.
+
+Test không được dùng để chọn method hoặc siêu tham số. Config pilot hiện đánh giá
+trên **dev**; kết quả đó chỉ phục vụ kiểm tra code và screening.
+
+## 2. Panel đã được code
+
+Config [`pilot_adult_full_seed11.json`](configs/pilot_adult_full_seed11.json) có
+19 dòng, tương ứng 95 ô method × learner ở một seed. Ô không hợp contract vẫn
+được ghi `NA_CONTRACT`; thiếu dependency, vượt RAM hoặc vượt time gate vẫn được
+ghi `BLOCKED/PREDICTED_OOM/PREDICTED_TIMEOUT`, không bị xóa khỏi mẫu số.
+Tên cũ `pilot_adult_seed11.json` hiện là alias của full config, nên không còn
+trường hợp một file mang tên pilot/full nhưng chỉ âm thầm chạy hai method.
+
+| Nhóm | ID | Implementation và cách hiểu |
+|---|---|---|
+| Reference | `c00_full_train` | Train toàn bộ; không phải selector |
+| Control | `c02_stratified_random` | Exact 5%, chỉ XGBoost confirmatory theo protocol |
+| Native | `n01_coretab_dt_subset` | Gọi trực tiếp CoreTab-DT commit khóa; giữ native size |
+| Native | `n02_coretab_xgb_subset` | Gọi trực tiếp CoreTab-XGB commit khóa; giữ native size |
+| Native | `n_bdis_native` | Gọi BDIS upstream; bắt buộc `faiss`, không sklearn fallback |
+| Native | `n_autocoreset_native` | Nhập artifact do driver environment riêng tạo |
+| Native | `n_craig_native` | Facility-location/lazy-greedy từ repo CRAIG; O(n²) có preflight |
+| Benchmark | `n_gcoreset_benchmark` | Gonzalez farthest-first theo benchmark Tabular Data Distillation |
+| Benchmark | `n_leverage_benchmark` | PCA leverage sampling theo cùng benchmark |
+| Synthetic | `s_kip_tdbench` | Gọi KIP trong TDBench; lưu `generated_train.npz` |
+| Synthetic | `s_mtt_tdbench` | Gọi trajectory matching trong TDBench |
+| Proposed | `p01_skq_coretab_dt` | SKQ dùng structure do N01 xuất |
+| Proposed | `p02_skq_coretab_xgb` | SKQ dùng structure do N02 xuất |
+| Proposed | `p03_skq_bdis_filtered` | SKQ trên candidate/structure BDIS; chỉ mở khi BDIS gate qua |
+| Proposed | `p04_skq_lrq_sq` | P02 structure + OOF loss của LR |
+| Proposed | `p05_skq_lrq_mq` | P02 structure + OOF loss LR/RF/XGB |
+| Ablation | `d02_parent_structured_random` | Giữ structure/QP, thay herding bằng random trong nhóm |
+| Ablation | `d04_global_rff_quadrature` | Bỏ parent structure, vẫn giữ class/RFF/herding/QP |
+| Ablation | `d05_equal_group_weight` | Giữ index của P05, thay QP bằng trọng số đều trong nhóm |
+
+`p00_structured_kquad` là engine dùng chung, không phải dòng kết quả. P03/P04/P05
+được code để kiểm tra tích hợp; trước bảng confirmatory phải chọn base winner trên
+dev và cập nhật freeze manifest. Pilot đang dùng N02 làm parent tạm cho P04/P05,
+không phải tuyên bố N02 đã thắng.
+
+## 3. Native, benchmark, synthetic khác nhau thế nào
+
+- **Native**: chạy implementation của tác giả đúng commit. Kích thước thực tế
+  được giữ nguyên; không trim/pad để giả thành 5%.
+- **Benchmark reproduction**: tái hiện đúng hàm/công thức trong repo benchmark,
+  kèm compatibility patch có khai báo. Không gọi nó là native paper.
+- **Synthetic**: sinh X/y mới nên không có `selected_indices.npy`; nó dùng contract
+  và storage-matched table riêng.
+- **Proposed/ablation**: code trong package này, exact-budget và có unit test.
+
+AutoCoreset cần boundary riêng vì upstream phụ thuộc API cũ. BDIS cần Faiss. KIP
+cần JAX/neural-tangents; MTT cần PyTorch. Nếu môi trường không đạt, ledger nói rõ
+lý do và tuyệt đối không chạy một thuật toán khác dưới cùng tên.
+
+CoreTab upstream ở commit khóa chỉ có native subset contract cho nhãn nhị phân.
+Với dataset đa lớp, N01/N02 được ghi `NA_CONTRACT`; adapter chỉ xuất leaf structure
+đa lớp cho P01/P02 và ghi rõ `structure_only=true`, không tạo điểm native CoreTab
+giả bằng một OVA tùy ý.
+
+## 4. Cấu trúc project
+
+```text
+skq_experiment/
+├── configs/                         # protocol/stage, không chứa thuật toán
+├── data/raw/                        # raw data, Git ignore
+├── data/processed/                  # split + train-only preprocessing, Git ignore
+├── external/
+│   ├── official_repos.lock.json     # URL + commit khóa
+│   └── repos/                       # checkout repo tác giả, Git ignore
+├── artifacts/                       # selection, prediction, metric, ledger
+├── requirements/                    # base, Kaggle và native-isolated
+├── scripts/                         # fetch repo, driver AutoCoreset, Kaggle entry
+├── src/skq_exp/
+│   ├── data/                        # download, split, preprocessing và manifest
+│   ├── methods/
+│   │   ├── native/                  # boundary repo tác giả
+│   │   ├── benchmark/               # reproduction benchmark có khai báo
+│   │   ├── synthetic/               # contract KIP/MTT sinh X/y
+│   │   └── proposed/                # RFF, allocation, herding, QP, query loss
+│   ├── training/                    # 5 learner, weight contract và metrics
+│   ├── experiments/                 # DAG, gate, runner và failure ledger
+│   └── reports/                     # bảng long, trạng thái và break-even
+└── tests/                            # contract/unit/end-to-end tests
+```
+
+Mỗi file Python có phần ghi chú đầu file bằng tiếng Việt, mô tả đầu vào, việc nó
+làm và lý do tồn tại. Thuật toán không được viết trong notebook hoặc shell cell.
+
+## 5. Cài và kiểm tra
+
+PowerShell:
+
+```powershell
+cd C:\source\paper\skq_experiment
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -e ".[boosting,deep,dev]"
+python scripts\fetch_official_repos.py
+pytest -q
+skq doctor
+skq smoke --config configs\s0_smoke.json
+```
+
+`fetch_official_repos.py` kiểm tra đúng sáu commit trong lock file. Không commit
+các checkout này lên GitHub.
+
+## 6. Chạy Adult một seed
+
+Tải và chuẩn bị dữ liệu:
+
+```powershell
+skq fetch-data --config configs\pilot_adult_full_seed11.json --dataset adult_uci2_v1
+skq prepare --config configs\pilot_adult_full_seed11.json --dataset adult_uci2_v1
+```
+
+Kiểm tra nhanh trước (FullTrain-LR + D04-LR):
+
+```powershell
+skq run --config configs\pilot_adult_quick_seed11.json `
+  --selector-seed 11 --max-ram-gb 8 --timeout-seconds 1800 --max-threads 4
+```
+
+Chạy toàn bộ candidate matrix trên Adult, seed 11:
+
+```powershell
+skq plan --config configs\pilot_adult_full_seed11.json
+skq run --config configs\pilot_adult_full_seed11.json `
+  --selector-seed 11 --model-seed 42 `
+  --max-ram-gb 8 --timeout-seconds 3600 --max-threads 4 `
+  --max-estimated-operations 30000000000
+```
+
+Đây mới là lệnh **full**. Nó đi qua cả 19 method và 5 learner; không phải lệnh
+2-method quick check. `skq plan` phải báo 18 phương pháp nén/sinh, 95 ô tổng,
+91 ô hợp contract và 4 ô C02–non-XGB là `NA_CONTRACT`. Một số method có thể dừng
+ở resource/dependency gate như thiết kế. Chạy riêng
+một ô để debug:
+
+```powershell
+skq run --config configs\pilot_adult_full_seed11.json `
+  --method p02_skq_coretab_xgb --learner lr --selector-seed 11
+```
+
+Các method phụ thuộc structure phải chạy source trước nếu chạy riêng: N01 trước
+P01; N02 trước P02/P04/P05/D02; BDIS trước P03. Full config đã sắp đúng thứ tự và
+structure artifact cũng có thể được nạp lại từ ổ đĩa.
+
+Sau khi seed 11 ổn, thêm seed mà không sửa code:
+
+```powershell
+skq run --config configs\pilot_adult_full_seed11.json `
+  --selector-seed 11 --selector-seed 29 --selector-seed 47
+```
+
+## 7. Điều gì được lưu và có nặng máy không
+
+Mặc định `save_models=false`. Một run chọn dòng lưu:
+
+```text
+manifest.json
+selected_indices.npy
+sample_weights.npy
+diagnostics.json
+timings.json
+predictions.npz
+metrics_overall.json
+metrics_per_label.csv
+metrics_all.json
+confusion_matrix.csv
+cost.json
+```
+
+Synthetic thay hai file selection bằng `generated_train.npz`. C00 chỉ lưu
+full-reference manifest, không tạo `selected_indices.npy` giả. Model chỉ được lưu
+khi thêm `--save-model`; đây mới là loại artifact dễ phình lớn. Prediction được
+nén và Adult nhỏ, nên phần mặc định chủ yếu là metric/index chứ không phải hàng
+chục checkpoint.
+
+Guard bảo vệ máy gồm:
+
+- preflight RAM và số phép tính;
+- hard resource check giữa các batch/vòng của SKQ và Gonzalez;
+- CRAIG tính cả ma trận pairwise O(n²) trong dự báo RAM;
+- KIP/MTT có `max_rows` trước khi import framework nặng;
+- trạng thái dừng được ghi vào manifest/ledger.
+
+Repo ngoài không phải method nào cũng có điểm kiểm tra giữa vòng; với chúng,
+preflight là lớp bảo vệ chính. Nếu muốn nới gate, sửa config có chủ đích và lưu
+deviation record; không chỉ tăng giới hạn vì muốn ô thành công.
+
+## 8. Metrics
+
+Mỗi prediction tạo hơn 25 metric tổng thể: accuracy, balanced accuracy,
+precision/recall/F1/Jaccard macro-micro-weighted, MCC, Cohen kappa, quadratic
+kappa, worst-class F1/recall, ROC-AUC và PR-AUC macro/weighted, log-loss, Brier và
+ECE-15. Mỗi label có support, prevalence, TP/FP/TN/FN, precision, recall,
+specificity, NPV, F1/F2, FPR/FNR, MCC, kappa, ROC-AUC và PR-AUC.
+
+`cost.json` tách selection/generation, RFF/herding/QP, fit, predict, total, CPU,
+RSS lower bound, VRAM, I/O, throughput, compression ratio và storage artifact.
+`skq aggregate` ghép FullTrain để tính break-even reuse khi fit coreset thực sự
+nhanh hơn FullTrain.
+
+```powershell
+skq aggregate --artifact-root artifacts
+```
+
+Đầu ra chính:
+
+- `artifacts/aggregate/runs_long.csv`;
+- `artifacts/aggregate/status_summary.csv`;
+- `artifacts/<experiment_id>/run_ledger.json`.
+
+## 9. Kết quả kiểm tra tích hợp đã thực hiện
+
+Trên Adult, Python 3.13, seed 11, dev split:
+
+- FullTrain-LR: chạy thành công;
+- D04-LR: exact 5%, chạy thành công;
+- CoreTab-DT/XGB official: chạy thành công và xuất structure;
+- P01/P02/P04/P05-LR: chạy thành công, exact 5%;
+- Gonzalez và Leverage benchmark-LR: chạy thành công;
+- BDIS: trả BLOCKED đúng vì môi trường hiện tại thiếu Faiss;
+- KIP: trả PREDICTED_TIMEOUT vì 5% Adult vượt synthetic gate 500 dòng.
+
+Các con số pilot trong artifact **không phải kết quả bài báo**: mới một seed, một
+phần learner và dev. Chúng chỉ chứng minh đường code thật đã chạy.
+
+## 10. Quy tắc trước khi viết bảng bài báo
+
+1. Chọn representative/base winner chỉ bằng dev trên đủ dataset/seeds.
+2. Freeze method, hyperparameter, query portfolio, contrasts và config hash.
+3. Chỉ sau đó tạo `artifacts/freeze/freeze_manifest.json` và mở `s2_confirm`.
+4. Confirmatory chính: budget 5%, XGBoost, Macro-F1, MCC, worst-class và Holm.
+5. Transfer: LR/RF/XGB/CatBoost/MLP với cùng selection artifact.
+6. Native-size và exact-5% phải nằm ở cột/figure khác nhau.
+7. Synthetic báo cả row-count-matched và storage-matched.
+8. Failure/OOM/timeout/NA phải ở lại bảng.
+
+Trong pilot, MLP chạy số epoch cố định và không dùng dev để early-stop. Khi bổ
+sung tuning chính thức, inner-validation phải được tách từ train trước selector,
+freeze hyperparameter trên FullTrain rồi dùng lại cho mọi method.
+
+Hướng dẫn đưa code lên GitHub và chạy Kaggle nằm trong
+[`GUIDELINE_GITHUB_KAGGLE.md`](GUIDELINE_GITHUB_KAGGLE.md).
+
+## 11. Nguồn quyết định khoa học
+
+- `C:\source\paper\lý thuyết\GOI_THUC_NGHIEM_NEN_V1\docs\19_MASTER_RESEARCH_AND_IMPLEMENTATION_SPEC.md`
+- `C:\source\paper\lý thuyết\nhận xét\implementation_plan.md`
+- `C:\source\paper\outputs\experiment_matrix_20261006\MA_TRAN_THUC_NGHIEM_SKQ_FULL.xlsx`
+
+Nếu code và protocol đã freeze mâu thuẫn, dừng run và ghi deviation; không sửa
+thiết lập sau khi nhìn test.

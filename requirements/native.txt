@@ -1,0 +1,6 @@
+# Dependency chỉ cần cho các repo đối chứng native; cài trong environment riêng.
+-r base.txt
+fast-enum>=1.3
+# BDIS cần faiss-cpu. Nếu pip không có wheel cho Python đang dùng, dùng conda như README upstream.
+faiss-cpu>=1.8; python_version < "3.13"
+

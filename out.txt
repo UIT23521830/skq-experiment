@@ -1,0 +1,8 @@
+fatal: detected dubious ownership in repository at 'C:/source/paper/skq_experiment'
+'C:/source/paper/skq_experiment' is owned by:
+	DESKTOP-LJSF2A4/CodexSandboxOffline (S-1-5-21-2838812926-4287263011-219292151-1018)
+but the current user is:
+	DESKTOP-LJSF2A4/DELL (S-1-5-21-2838812926-4287263011-219292151-1003)
+To add an exception for this directory, call:
+
+	git config --global --add safe.directory C:/source/paper/skq_experiment

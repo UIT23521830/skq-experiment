@@ -1,0 +1,5 @@
+# Kaggle thường đã có phần lớn gói này; lệnh cài sẽ chỉ bổ sung phiên bản còn thiếu.
+-r base.txt
+torch>=2.2,<3
+pytest>=8,<9
+

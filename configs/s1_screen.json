@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "experiment_id": "public_static_screen_v1",
+  "protocol_id": "static_tabular_v1",
+  "stage_id": "s1_screen",
+  "dataset_ids": [
+    "adult_uci2_v1", "creditcard_ulb2013_v1", "letter_uci59_v1",
+    "covertype_uci31_v1", "jannis_openml41168_v1", "helena_openml41169_v1"
+  ],
+  "method_ids": [
+    "n01_coretab_dt_subset", "n02_coretab_xgb_subset",
+    "d02_parent_structured_random", "d04_global_rff_quadrature",
+    "d05_equal_group_weight", "p01_skq_coretab_dt", "p02_skq_coretab_xgb"
+  ],
+  "learner_ids": ["lr", "rf", "xgb"],
+  "budget_ratio": 0.05,
+  "split_seed": 20261002,
+  "selector_seeds": [11, 29, 47],
+  "model_seed": 42,
+  "test_locked": true,
+  "paths": {
+    "raw_root": "data/raw",
+    "processed_root": "data/processed",
+    "artifact_root": "artifacts"
+  },
+  "resource": {
+    "timeout_seconds": 7200,
+    "max_ram_gb": 12,
+    "max_threads": 4,
+    "max_estimated_operations": 50000000000
+  },
+  "artifact_policy": {
+    "save_models": false,
+    "save_predictions": true,
+    "save_probabilities": true
+  }
+}
+

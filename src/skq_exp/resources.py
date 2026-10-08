@@ -1,0 +1,106 @@
+"""File này ước lượng chi phí trước khi chạy và theo dõi tài nguyên trong selector.
+
+Nếu số phép tính hoặc bộ nhớ dự kiến vượt mức người dùng đặt, run được ghi
+`predicted_oom` hoặc `predicted_timeout` mà không khởi động phần nặng. Với code
+SKQ nội bộ, guard còn kiểm tra thời gian và RAM giữa các batch/vòng lặp để dừng an
+toàn trước khi máy bị chiếm hết tài nguyên.
+"""
+
+from __future__ import annotations
+
+import os
+import time
+from dataclasses import dataclass
+from typing import Any
+
+import psutil
+
+
+class ResourceLimitError(RuntimeError):
+    def __init__(self, status: str, message: str):
+        super().__init__(message)
+        self.status = status
+
+
+@dataclass(frozen=True)
+class CostEstimate:
+    rff_bytes: int
+    working_bytes: int
+    estimated_operations: float
+
+
+def estimate_selection_cost(
+    method_id: str,
+    n_rows: int,
+    n_features: int,
+    budget_rows: int,
+    *,
+    rff_components: int = 256,
+    n_classes: int = 2,
+) -> CostEstimate:
+    rff_bytes = int(n_rows * rff_components * 4)
+    base_bytes = int(n_rows * n_features * 4)
+    operations = float(n_rows * n_features)
+    if method_id.startswith(("p0", "d02", "d04", "d05")):
+        operations += float(n_rows * n_features * rff_components)
+        # Class/group partition làm chi phí thực nhỏ hơn worst-case global; dùng
+        # n_classes như một ước lượng bảo thủ có thể giải thích được.
+        operations += float(budget_rows * n_rows * rff_components / max(1, n_classes))
+    if "craig" in method_id:
+        pairwise_bytes = int(n_rows * n_rows * 8)
+        gradient_bytes = int(n_rows * n_features * max(2, n_classes) * 8)
+        operations += float(budget_rows * n_rows * max(2, n_classes))
+        base_bytes += gradient_bytes + pairwise_bytes
+    if "gcoreset" in method_id:
+        operations += float(budget_rows * n_rows * n_features)
+    if method_id.startswith("s_kip"):
+        operations += float(100 * max(1, budget_rows) ** 2 * max(1, n_features))
+        base_bytes += int(max(1, budget_rows) ** 2 * 8)
+    if method_id.startswith("s_mtt"):
+        operations += float(100 * n_rows * n_features * max(2, n_classes))
+    if method_id in {"p04_skq_lrq_sq", "p05_skq_lrq_mq"}:
+        operations += float(5 * n_rows * n_features * (3 if method_id.endswith("mq") else 1))
+    working_bytes = int((base_bytes + rff_bytes) * 1.8)
+    return CostEstimate(rff_bytes, working_bytes, operations)
+
+
+def enforce_preflight(estimate: CostEstimate, policy: dict[str, Any] | None) -> None:
+    policy = policy or {}
+    max_ram_gb = float(policy.get("max_ram_gb", 8.0))
+    max_ops = float(policy.get("max_estimated_operations", 50_000_000_000))
+    available = psutil.virtual_memory().available
+    configured = int(max_ram_gb * 1024 ** 3)
+    allowed = min(configured, int(available * 0.75))
+    if estimate.working_bytes > allowed:
+        raise ResourceLimitError(
+            "predicted_oom",
+            f"Ước lượng {estimate.working_bytes / 1024**3:.2f} GiB vượt mức an toàn "
+            f"{allowed / 1024**3:.2f} GiB",
+        )
+    if estimate.estimated_operations > max_ops:
+        raise ResourceLimitError(
+            "predicted_timeout",
+            f"Ước lượng {estimate.estimated_operations:.3g} phép tính vượt ngưỡng {max_ops:.3g}",
+        )
+
+
+class ResourceGuard:
+    def __init__(self, policy: dict[str, Any] | None):
+        policy = policy or {}
+        self.started = time.monotonic()
+        self.timeout_seconds = float(policy.get("timeout_seconds", 3600))
+        self.max_rss_bytes = int(float(policy.get("max_ram_gb", 8.0)) * 1024 ** 3)
+        self.process = psutil.Process(os.getpid())
+
+    def check(self, stage: str = "run") -> None:
+        elapsed = time.monotonic() - self.started
+        if elapsed > self.timeout_seconds:
+            raise ResourceLimitError(
+                "timeout", f"Dừng ở {stage}: vượt {self.timeout_seconds:.0f} giây"
+            )
+        rss = self.process.memory_info().rss
+        if rss > self.max_rss_bytes:
+            raise ResourceLimitError(
+                "oom", f"Dừng ở {stage}: RSS {rss / 1024**3:.2f} GiB vượt giới hạn"
+            )
+

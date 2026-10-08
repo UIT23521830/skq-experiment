@@ -1,0 +1,23 @@
+# Dữ liệu và kết quả không đưa thẳng lên GitHub.
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.ipynb_checkpoints/
+.idea/
+.vscode/
+
+data/raw/**
+data/processed/**
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+artifacts/**
+!artifacts/README.md
+external/repos/**
+!external/repos/.gitkeep
+*.log
+*.tmp
+catboost_info/
+MA_TRAN_THUC_NGHIEM_SKQ_FULL.xlsx
