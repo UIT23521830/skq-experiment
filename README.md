@@ -57,9 +57,12 @@ trường hợp một file mang tên pilot/full nhưng chỉ âm thầm chạy h
 | Ablation | `d04_global_rff_quadrature` | Bỏ parent structure, vẫn giữ class/RFF/herding/QP |
 | Ablation | `d05_equal_group_weight` | Giữ index của P05, thay QP bằng trọng số đều trong nhóm |
 
-`p00_structured_kquad` là engine dùng chung, không phải dòng kết quả. P04/P05 trả
-`GATE_LOCKED` nếu chưa có freeze manifest chứa base winner. Parent tạm trong pilot
-không mở gate và không phải tuyên bố N02 đã thắng.
+`p00_structured_kquad` là engine dùng chung, không phải dòng kết quả. Trong
+`s1_screen`, P04/P05 được chạy trên **dev** với parent N02 đã khai báo trước và
+artifact phải ghi `pre_freeze_dev_screen`, `confirmatory_eligible=false`. Đây chỉ
+là sàng lọc thăm dò, không phải tuyên bố N02 đã thắng. Khi chạy ngoài vòng screen,
+đặc biệt `s2_confirm` trên test, P04/P05 vẫn trả `GATE_LOCKED` nếu chưa có freeze
+manifest hoặc parent không khớp winner đã freeze.
 
 ## 3. Native, benchmark, synthetic khác nhau thế nào
 
@@ -158,9 +161,9 @@ skq run --config configs\pilot_adult_full_seed11.json `
 Đây mới là lệnh **full**. Nó đi qua cả 20 method và 5 learner; không phải lệnh
 2-method quick check. `skq plan` phải báo 19 phương pháp nén/sinh, 100 ô tổng,
 96 ô được lên kế hoạch chạy;
-4 ô C02–non-XGB là `NA_CONTRACT`. P04/P05 giữ
-`GATE_LOCKED` cho tới khi base winner đã freeze; dependency bị thiếu không được
-coi là kết quả cuối. Chạy riêng
+4 ô C02–non-XGB là `NA_CONTRACT`. P04/P05 chạy ở dev dưới nhãn pre-freeze; chỉ
+confirmatory/test mới giữ `GATE_LOCKED` cho tới khi base winner đã freeze.
+Dependency bị thiếu không được coi là kết quả cuối. Chạy riêng
 một ô để debug:
 
 ```powershell

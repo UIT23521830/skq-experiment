@@ -80,8 +80,10 @@ Cell đầu tiên:
 !skq doctor
 ```
 
-`kaggle-full` cài cả BDIS (`faiss-cpu`) và KIP-TDBench
-(`jax`, `neural-tangents`). Nếu `skq doctor` vẫn báo thiếu một trong các gói này,
+`kaggle-full` cài cả BDIS (`faiss-cpu`), AutoCoreset
+(`iterative-stratification`) và KIP-TDBench (`jax==0.4.38`,
+`neural-tangents==0.6.5`). Pin JAX này giữ API mà source TDBench khóa commit đang
+dùng và có wheel Python 3.13. Nếu `skq doctor` vẫn báo thiếu một trong các gói này,
 run tương ứng phải được xem là `BLOCKED`, không phải kết quả utility.
 
 Nếu Internet bị tắt, upload source dưới dạng Kaggle Dataset hoặc Notebook input,
@@ -117,13 +119,13 @@ Trong config chạy, dùng:
 !skq fetch-data --dataset adult_uci2_v1 --config configs/pilot_adult_full_seed11.json
 !skq prepare --dataset adult_uci2_v1 --config configs/pilot_adult_full_seed11.json
 
-# 3. Quick check rồi candidate matrix; LRQ vẫn GATE_LOCKED trước dev freeze
+# 3. Quick check rồi candidate matrix; LRQ được screen trên dev với parent khai báo trước
 !skq run --config configs/pilot_adult_quick_seed11.json --selector-seed 11
 !skq run --config configs/pilot_adult_full_seed11.json --selector-seed 11 \
   --max-ram-gb 12 --timeout-seconds 7200 --max-threads 4
 
 # 4. Sau dev screen, tạo freeze_manifest schema v3 theo docs/freeze_manifest.example.json.
-#    Chỉ sau đó P04/P05 và confirmatory mới được mở.
+#    Chỉ sau đó kết quả P04/P05 mới được phép đi vào confirmatory/test.
 !skq run --config configs/s2_confirm.json --dataset adult_uci2_v1
 
 # 5. Gom kết quả của những run đã hoàn thành

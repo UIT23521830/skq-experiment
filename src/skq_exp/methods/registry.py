@@ -108,11 +108,17 @@ METHOD_SPECS = {
         ),
         MethodSpec(
             "p04_skq_lrq_sq", "SKQ-LRQ-SQ", "proposed", "implemented", True,
-            note="Đề xuất query-aware một learner; chỉ mở sau dev freeze.",
+            note=(
+                "Đề xuất query-aware một learner; được screen trên dev với parent "
+                "khai báo trước, test chỉ mở sau freeze."
+            ),
         ),
         MethodSpec(
             "p05_skq_lrq_mq", "SKQ-LRQ-MQ", "proposed", "implemented", True,
-            note="Đề xuất query-aware nhiều learner; chỉ mở sau dev freeze.",
+            note=(
+                "Đề xuất query-aware nhiều learner; được screen trên dev với parent "
+                "khai báo trước, test chỉ mở sau freeze."
+            ),
         ),
         MethodSpec(
             "d02_parent_structured_random", "Parent-Structured Random", "ablation", "implemented", True,

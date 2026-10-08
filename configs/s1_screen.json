@@ -12,6 +12,7 @@
   "method_ids": [
     "n01_coretab_dt_subset", "n02_coretab_xgb_subset",
     "p01_skq_coretab_dt", "p02_skq_coretab_xgb",
+    "p04_skq_lrq_sq", "p05_skq_lrq_mq",
     "d02_parent_structured_random", "d04_global_rff_quadrature",
     "d05_equal_group_weight"
   ],
@@ -43,7 +44,7 @@
       "n_components": 256
     },
     "d05_equal_group_weight": {
-      "source_method": "p02_skq_coretab_xgb",
+      "source_method": "p05_skq_lrq_mq",
       "parent_source": "n02_coretab_xgb_subset"
     },
     "p01_skq_coretab_dt": {
@@ -53,7 +54,20 @@
     "p02_skq_coretab_xgb": {
       "parent_source": "n02_coretab_xgb_subset",
       "n_components": 256
+    },
+    "p04_skq_lrq_sq": {
+      "parent_source": "n02_coretab_xgb_subset",
+      "query_learners": ["lr"],
+      "query_alpha": 0.5,
+      "oof_folds": 5,
+      "n_components": 256
+    },
+    "p05_skq_lrq_mq": {
+      "parent_source": "n02_coretab_xgb_subset",
+      "query_learners": ["lr", "rf", "xgb"],
+      "query_alpha": 0.5,
+      "oof_folds": 5,
+      "n_components": 256
     }
   }
 }
-

@@ -104,8 +104,14 @@ class TAMEOfficialGenerator:
                 "init_seed": self.seed,
             }
             data = {
-                "X_train": torch.as_tensor(np.asarray(X_train), dtype=torch.float32),
-                "y_train": torch.as_tensor(np.asarray(y_train), dtype=torch.long),
+                # Processed arrays có thể là read-only memmap. Tạo bản sao writable
+                # để PyTorch không cảnh báo/ghi ngoài ý muốn; giá trị không thay đổi.
+                "X_train": torch.as_tensor(
+                    np.array(X_train, dtype=np.float32, copy=True), dtype=torch.float32
+                ),
+                "y_train": torch.as_tensor(
+                    np.array(y_train, dtype=np.int64, copy=True), dtype=torch.long
+                ),
                 "input_dim": int(X_train.shape[1]),
                 "num_classes": int(len(labels)),
             }

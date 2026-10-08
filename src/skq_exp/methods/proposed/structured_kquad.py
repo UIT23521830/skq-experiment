@@ -2,14 +2,16 @@
 
 Trạng thái: implementation của nhóm tác giả dự án, không phải code từ paper đối
 chứng. P01/P02 dùng cấu trúc CoreTab, P03 dùng candidate BDIS, còn P04/P05 thêm
-query-loss ngoài-fold sau khi base winner đã được freeze. Cơ chế chung: chia exact
+query-loss ngoài-fold. Ở vòng screen, parent của P04/P05 phải được khai báo trước
+và kết quả chỉ là thăm dò trên dev; vòng confirmatory vẫn cần base winner đã freeze.
+Cơ chế chung: chia exact
 budget theo structure×class, ánh xạ RFF, chọn dòng thật bằng kernel herding rồi
 tối ưu trọng số simplex-QP trong từng nhóm. Loại đầu ra: subset dòng thật có trọng
 số và đúng tổng budget.
 
 Các biến thể này là đóng góp chính cần được so với native, benchmark, synthetic
-và control. P04/P05 bị GATE_LOCKED trước dev freeze để tránh chọn cấu hình sau khi
-đã nhìn test; gate đó là quy tắc phương pháp luận, không phải code chưa hoàn tất.
+và control. Test vẫn bị GATE_LOCKED trước freeze để tránh chọn cấu hình sau khi đã
+nhìn test; dev screen không được dùng như bằng chứng confirmatory.
 """
 
 from __future__ import annotations
