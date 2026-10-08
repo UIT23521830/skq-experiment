@@ -39,8 +39,8 @@ aggregate; chỉ sau dev freeze mới được mở test
 | AutoCoreset | boundary + driver hoàn tất | environment riêng có `iterative-stratification`, tạo artifact đúng fingerprint |
 | CRAIG feature-space | adaptation R1 | pairwise preflight không vượt RAM/ops; không claim native |
 | Gonzalez, Leverage | hoàn tất và đã smoke Adult | Gọi trực tiếp hai function upstream; adapter vá seed/index/PCA |
-| KIP-TDBench | adapter output riêng hoàn tất | JAX + neural-tangents và max_rows gate |
-| MTT-TDBench | adapter output riêng hoàn tất | PyTorch và max_rows gate |
+| KIP-TDBench | adapter output riêng hoàn tất | JAX + neural-tangents; budget được hạ về mức source `10*N` không hoàn lại khả thi và lưu requested/realized |
+| MTT-TDBench | adapter output riêng hoàn tất | PyTorch; chạy budget cấu hình, chỉ chặn bởi preflight RAM/ops hoặc OOM/timeout thật |
 | TAME official | adapter output riêng hoàn tất | PyTorch/GPU tùy chọn và max_rows gate |
 | P01, P02 | hoàn tất và đã smoke Adult | N01/N02 structure |
 | P03 | hoàn tất theo candidate-mask contract | BDIS phải qua gate và pool đủ budget |

@@ -182,9 +182,13 @@ Quy trình:
 4. Kiểm tra row identity và output type.
 5. AutoCoreset chạy `python scripts/run_autocoreset_native.py --config ... --dataset ... --seed 11`; chỉ artifact qua gate mới được runner nhập.
 
-KIP cần JAX và neural-tangents, MTT cần PyTorch. Với 5% Adult, config mặc định
-chặn synthetic nếu vượt 500 dòng; đây là resource gate, không phải lỗi mất method.
-Chỉ nâng `method_options.<method>.max_rows` sau khi smoke trên GPU thành công.
+KIP cần JAX và neural-tangents, MTT cần PyTorch. KIP/MTT không bị chặn bởi trần
+500 dòng nữa: budget 5% là biến thực nghiệm, còn preflight chỉ chặn khi ước lượng
+RAM hoặc số phép tính vượt policy. OOM/timeout runtime được ghi đúng loại tài
+nguyên. Với Adult, KIP-TDBench yêu cầu target batch `10*N` mỗi lớp không hoàn lại,
+nên requested 1.384 dòng được giữ trong manifest nhưng source chỉ khả thi ở
+`N=666` mỗi lớp, tức realized 1.332 dòng. MTT vẫn nhắm 692 mỗi lớp = 1.384 dòng.
+Đây là giới hạn contract của source KIP, không phải lỗi hay thay đổi thuật toán.
 
 ## 9. Tải kết quả về máy
 

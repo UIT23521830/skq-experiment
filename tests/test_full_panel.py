@@ -37,9 +37,10 @@ def test_adult_full_config_has_20_rows_and_five_learners():
     assert config.test_locked is True
     assert config.method_options["p04_skq_lrq_sq"]["parent_source"] == "n02_coretab_xgb_subset"
     assert config.method_options["p05_skq_lrq_mq"]["parent_source"] == "n02_coretab_xgb_subset"
-    # KIP/MTT van giu resource gate 500: khong danh doi tinh dung lay viec "chay het".
-    assert config.method_options["s_kip_tdbench"]["max_rows"] == 500
-    assert config.method_options["s_mtt_tdbench"]["max_rows"] == 500
+    # Budget là biến thực nghiệm; KIP/MTT chỉ bị chặn bởi preflight tài nguyên có
+    # đơn vị rõ ràng, không bởi trần số dòng tùy ý.
+    assert "max_rows" not in config.method_options["s_kip_tdbench"]
+    assert "max_rows" not in config.method_options["s_mtt_tdbench"]
 
 
 def test_benchmark_selectors_return_exact_unique_indices(tmp_path):

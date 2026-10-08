@@ -270,7 +270,21 @@ def _produce_or_block(
     try:
         enforce_preflight(estimate, config.resource)
     except ResourceLimitError as error:
-        return _failure_for_kind(spec.output_kind, method_id, error.status, requested, str(error))
+        failure = _failure_for_kind(
+            spec.output_kind, method_id, error.status, requested, str(error)
+        )
+        failure.diagnostics.update({
+            "resource_failure": True,
+            "resource_gate": "preflight",
+            "resource_status": error.status,
+            "estimated_working_bytes": int(estimate.working_bytes),
+            "estimated_operations": float(estimate.estimated_operations),
+            "configured_max_ram_gb": float(config.resource.get("max_ram_gb", 8.0)),
+            "configured_max_estimated_operations": float(
+                config.resource.get("max_estimated_operations", 50_000_000_000)
+            ),
+        })
+        return failure
     guard = ResourceGuard(config.resource)
     if spec.output_kind == "synthetic":
         try:

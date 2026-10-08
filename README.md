@@ -211,12 +211,13 @@ Guard bảo vệ máy gồm:
 - preflight RAM và số phép tính;
 - hard resource check giữa các batch/vòng của SKQ và Gonzalez;
 - CRAIG tính cả ma trận pairwise O(n²) trong dự báo RAM;
-- KIP/MTT có `max_rows` trước khi import framework nặng;
+- KIP tính cả kernel target-support, gradient và optimizer trong dự báo RAM;
+- KIP/MTT không có trần budget tùy ý; OOM/timeout thật được ghi tách biệt;
 - trạng thái dừng được ghi vào manifest/ledger.
 
 Repo ngoài không phải method nào cũng có điểm kiểm tra giữa vòng; với chúng,
-preflight là lớp bảo vệ chính. Nếu muốn nới gate, sửa config có chủ đích và lưu
-deviation record; không chỉ tăng giới hạn vì muốn ô thành công.
+preflight là lớp bảo vệ chính. Requested size và realized size đều được lưu để
+không đánh đồng giới hạn khả thi của source với lỗi tài nguyên.
 
 ## 8. Metrics
 
