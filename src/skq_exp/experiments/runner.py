@@ -459,6 +459,11 @@ def _produce_or_block(
         method_id, len(y_train), X_train.shape[1], requested,
         rff_components=int(options.get("n_components", 256)),
         n_classes=len(np.unique(y_train)),
+        structured_work_rows=(
+            0.0
+            if method_id.startswith(("p0", "d02", "d04", "d05"))
+            else None
+        ),
     )
     try:
         enforce_preflight(estimate, config.resource)
@@ -507,7 +512,11 @@ def _produce_or_block(
         )
     except (KeyError, RuntimeError) as error:
         return SelectionResult.failure(method_id, "blocked", requested, str(error))
-    kwargs: dict[str, Any] = {"row_ids": np.asarray(data["row_ids_train"]), "resource_guard": guard}
+    kwargs: dict[str, Any] = {
+        "row_ids": np.asarray(data["row_ids_train"]),
+        "resource_guard": guard,
+        "resource_policy": config.resource,
+    }
     structure = None
     if spec.needs_parent:
         structure = _resolve_structure(

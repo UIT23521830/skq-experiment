@@ -29,6 +29,7 @@ import numpy as np
 from ..base import BaseSelector
 from ..contracts import BudgetInfeasibleError, exact_budget_size, validate_exact_selection
 from ..result import SelectionResult
+from ...resources import enforce_preflight, estimate_selection_cost
 from .allocation import allocate_classwise
 from .herding import kernel_herding
 from .rff import RBFRandomFeatures
@@ -117,6 +118,26 @@ class StructuredKQuadSelector(BaseSelector):
             return SelectionResult.failure(
                 self.method_id, "budget_infeasible", requested, str(error)
             )
+
+        # Estimate sau allocation dùng đúng kích thước group thay vì giả định
+        # mọi quota phải quét toàn dataset. D04 vẫn có group theo lớp nên giữ
+        # được gate bảo thủ; các biến thể có CoreTab/BDIS structure không bị
+        # chặn oan khi mỗi group thực tế nhỏ.
+        structured_work_rows = (
+            0.0
+            if self.random_within_group
+            else float(np.dot(candidate_capacities.astype(float), quotas.astype(float)))
+        )
+        refined_estimate = estimate_selection_cost(
+            self.method_id,
+            len(y_train),
+            X_train.shape[1],
+            realized_target,
+            rff_components=self.n_components,
+            n_classes=len(np.unique(y_train)),
+            structured_work_rows=structured_work_rows,
+        )
+        enforce_preflight(refined_estimate, kwargs.get("resource_policy"))
 
         rff_started = time.perf_counter()
         rff = RBFRandomFeatures(
