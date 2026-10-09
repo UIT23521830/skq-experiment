@@ -179,6 +179,13 @@ def _plan(config: ExperimentConfig, *, include_cells: bool = False) -> dict:
                 "learner_id": learner_id,
                 "contract": contract,
             })
+    if config.stage_id in {"s2_confirm", "s4_temporal"}:
+        evaluation_splits = (
+            [f"test_phase{phase}" for phase in range(1, 5)]
+            if "course_quality_med_v1" in config.dataset_ids else ["test"]
+        )
+    else:
+        evaluation_splits = ["dev"]
     result = {
         "experiment_id": config.experiment_id,
         "datasets": list(config.dataset_ids),
@@ -189,6 +196,8 @@ def _plan(config: ExperimentConfig, *, include_cells: bool = False) -> dict:
         "cells_total_per_dataset_seed": len(cells),
         "cells_planned": sum(cell["contract"] == "planned" for cell in cells),
         "cells_na_contract": sum(cell["contract"] == "na_contract" for cell in cells),
+        "evaluation_splits": evaluation_splits,
+        "evaluation_rows_total_per_dataset_seed": len(cells) * len(evaluation_splits),
     }
     if include_cells:
         result["cells"] = cells

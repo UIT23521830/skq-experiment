@@ -4,9 +4,19 @@ Các learner dùng chung cấu hình đã freeze; evaluator không được tự
 từng coreset. Metric tổng thể, từng nhãn và chi phí được sinh từ cùng prediction.
 """
 
-from .evaluator import evaluate_generated, evaluate_selection
+from .evaluator import (
+    FittedLearner,
+    evaluate_fitted_learner,
+    evaluate_generated,
+    evaluate_selection,
+    fit_generated_learner,
+    fit_selection_learner,
+)
 from .learners import LEARNER_SPECS, build_learner
 from .metrics import compute_all_metrics
 
-__all__ = ["LEARNER_SPECS", "build_learner", "compute_all_metrics", "evaluate_generated", "evaluate_selection"]
-
+__all__ = [
+    "FittedLearner", "LEARNER_SPECS", "build_learner", "compute_all_metrics",
+    "evaluate_fitted_learner", "evaluate_generated", "evaluate_selection",
+    "fit_generated_learner", "fit_selection_learner",
+]

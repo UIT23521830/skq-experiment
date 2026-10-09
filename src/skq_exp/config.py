@@ -145,6 +145,8 @@ class ExperimentConfig:
                     "LRQ s1_screen cần parent_source cụ thể khai báo trước: "
                     f"{unresolved}"
                 )
+        if self.stage_id == "s4_temporal" and self.test_locked:
+            raise ValueError("s4_temporal cần test_locked=false để đọc temporal test")
         if self.stage_id == "s2_confirm":
             if self.budget_ratio != 0.05 or tuple(self.learner_ids) != ("xgb",):
                 raise ValueError("confirmatory contract yêu cầu budget 5% và chỉ XGBoost")

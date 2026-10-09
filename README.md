@@ -238,8 +238,8 @@ không đánh đồng giới hạn khả thi của source với lỗi tài nguy�
 ## 7a. Chạy thử CourseQuality MED
 
 Snapshot Kaggle `hoangzyyng/cq-med` đã có train, validation và bốn temporal test
-snapshot nên không được đưa qua splitter của các dataset UCI. Lệnh riêng sau giữ
-`val_med.csv` làm dev, khóa test ở stage screening và lưu đủ bốn phase:
+snapshot nên không được đưa qua splitter của các dataset UCI. Lệnh sau giữ
+`val_med.csv` làm dev và lưu riêng đủ bốn phase:
 
 ```bash
 skq prepare-external \
@@ -250,15 +250,22 @@ skq run --config configs/pilot_course_quality_med_quick_seed11.json
 ```
 
 Quick config chỉ chạy FullTrain-LR và StratifiedRandom-LR để kiểm tra schema trên
-toàn bộ 2.637.700 dòng train. Config
+toàn bộ 2.637.700 dòng train. Nó fit mỗi learner đúng một lần rồi đánh giá cùng
+model trên đủ `test_phase1` đến `test_phase4`; mỗi phase có run/metric riêng và
+`temporal_summary.json` báo mean/worst. Config
 `pilot_course_quality_med_seed11.json` giữ đủ 22 method × 5 learner, nhưng các
 method bậc hai/deep có thể bị resource gate trên tập lớn này; đó là trạng thái
 thực, không được thay bằng fallback.
 
-Audit snapshot hiện có overlap user-course giữa train/dev/test, nên cả hai config
-đều mang `evidence_role=integration_debug_split_overlap`. Metric dùng để kiểm tra
-pipeline, chưa được đưa vào bảng confirmatory. Bốn test snapshot được lưu dưới
-`X_test_phase1.npy` … `X_test_phase4.npy`; runner s1 không đọc chúng.
+Audit snapshot hiện có overlap user-course giữa train/dev/test. Quick temporal
+run mang `evidence_role=integration_debug_split_overlap_temporal`; metric dùng để
+kiểm tra pipeline, chưa được đưa vào bảng confirmatory. Full config hiện vẫn là
+`s1_screen` nên chỉ đọc dev để chọn/freeze phương pháp. Sau khi tạo
+`artifacts/freeze/freeze_manifest.json` từ screen của chính CourseQuality, chạy
+`pilot_course_quality_med_temporal_seed11.json` để đánh giá ma trận đầy đủ trên
+cả bốn test. Config temporal yêu cầu freeze manifest; P04/P05 không được mở test
+trước bước này. Khi stage là `s2_confirm` hoặc `s4_temporal`, runner bắt buộc
+CourseQuality có và đánh giá đủ bốn test.
 
 Các dataset ngoài dùng chung lệnh `prepare-external`. Mỗi dataset có một module
 trong `src/skq_exp/data/adapters/`, kế thừa contract base hoặc khung CSV pre-split
