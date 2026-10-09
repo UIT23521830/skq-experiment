@@ -132,7 +132,10 @@ class ExperimentConfig:
             raise ValueError(f"Method cần method_options.parent_source: {missing_parent}")
         if not self.selector_seeds or len(set(self.selector_seeds)) != len(self.selector_seeds):
             raise ValueError("selector_seeds phải có ít nhất một giá trị và không trùng")
-        lrq_methods = {"p04_skq_lrq_sq", "p05_skq_lrq_mq"} & set(self.method_ids)
+        lrq_methods = {
+            "p04_skq_lrq_sq", "p05_skq_lrq_mq",
+            "p08_skq_gonzalez_lrq_sq", "p09_skq_gonzalez_lrq_mq",
+        } & set(self.method_ids)
         if self.stage_id == "s1_screen" and lrq_methods:
             if not self.test_locked:
                 raise ValueError("LRQ s1_screen chỉ được chạy khi test_locked=true")

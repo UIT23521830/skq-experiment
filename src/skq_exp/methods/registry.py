@@ -146,6 +146,34 @@ METHOD_SPECS = {
             ),
         ),
         MethodSpec(
+            "p06_gonzalez_qp", "Gonzalez-QP", "proposed", "implemented", True,
+            note=(
+                "Đề xuất screening: giữ candidate Gonzalez đúng 5%, dùng Voronoi theo "
+                "Gonzalez anchor và simplex-QP; tách riêng để đo đóng góp của weighting."
+            ),
+        ),
+        MethodSpec(
+            "p07_skq_gonzalez", "SKQ-Gonzalez", "proposed", "implemented", True,
+            note=(
+                "Đề xuất coverage-aware: Gonzalez tạo candidate pool 2x budget, "
+                "SKQ RFF herding + simplex-QP nén về exact budget."
+            ),
+        ),
+        MethodSpec(
+            "p08_skq_gonzalez_lrq_sq", "SKQ-Gonzalez-LRQ-SQ", "proposed", "implemented", True,
+            note=(
+                "Đề xuất coverage/query-aware một learner: candidate Gonzalez 2x, "
+                "OOF-LR query loss, RFF herding và simplex-QP; dev screen trước freeze."
+            ),
+        ),
+        MethodSpec(
+            "p09_skq_gonzalez_lrq_mq", "SKQ-Gonzalez-LRQ-MQ", "proposed", "implemented", True,
+            note=(
+                "Đề xuất coverage/query-aware nhiều learner: candidate Gonzalez 2x, "
+                "OOF LR/RF/XGB query loss, RFF herding và simplex-QP; dev screen trước freeze."
+            ),
+        ),
+        MethodSpec(
             "d02_parent_structured_random", "Parent-Structured Random", "ablation", "implemented", True,
             note="Ablation: giữ structure và QP nhưng thay kernel herding bằng random.",
         ),
@@ -207,8 +235,16 @@ def build_selector(method_id: str, seed: int, *, n_components: int = 256, extern
         return build_d02(seed, n_components)
     if method_id == "d04_global_rff_quadrature":
         return build_d04(seed, n_components)
-    if method_id in {"p01_skq_coretab_dt", "p02_skq_coretab_xgb", "p03_skq_bdis_filtered", "p04_skq_lrq_sq", "p05_skq_lrq_mq"}:
-        default_alpha = 0.5 if method_id in {"p04_skq_lrq_sq", "p05_skq_lrq_mq"} else 1.0
+    if method_id in {
+        "p01_skq_coretab_dt", "p02_skq_coretab_xgb", "p03_skq_bdis_filtered",
+        "p04_skq_lrq_sq", "p05_skq_lrq_mq", "p06_gonzalez_qp",
+        "p07_skq_gonzalez", "p08_skq_gonzalez_lrq_sq",
+        "p09_skq_gonzalez_lrq_mq",
+    }:
+        default_alpha = 0.5 if method_id in {
+            "p04_skq_lrq_sq", "p05_skq_lrq_mq",
+            "p08_skq_gonzalez_lrq_sq", "p09_skq_gonzalez_lrq_mq",
+        } else 1.0
         return StructuredKQuadSelector(
             method_id, seed=seed, n_components=n_components,
             bandwidth_multiplier=float(options.get("bandwidth_multiplier", 1.0)),

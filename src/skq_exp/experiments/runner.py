@@ -43,6 +43,15 @@ from ..training import (
 from .provenance import dataset_fingerprint, protocol_hash
 
 
+LRQ_METHODS = {
+    "p04_skq_lrq_sq",
+    "p05_skq_lrq_mq",
+    "p08_skq_gonzalez_lrq_sq",
+    "p09_skq_gonzalez_lrq_mq",
+}
+GONZALEZ_PARENT_PREFIX = "gonzalez_pool_"
+
+
 def run_smoke(config: ExperimentConfig) -> list[dict[str, Any]]:
     data = make_toy_data(config.split_seed)
     rows = []
@@ -449,7 +458,7 @@ def _produce_or_block(
                 "Method cần frozen proposed_winner",
             )
         options["source_method"] = frozen_roles["proposed_winner"]
-    if method_id in {"p04_skq_lrq_sq", "p05_skq_lrq_mq"}:
+    if method_id in LRQ_METHODS:
         gate_reason, lrq_provenance = _validate_lrq_gate(
             config, options, freeze_manifest
         )
@@ -534,6 +543,22 @@ def _produce_or_block(
     }
     structure = None
     if spec.needs_parent:
+        parent_source = str(options.get("parent_source", ""))
+        if parent_source.startswith(GONZALEZ_PARENT_PREFIX):
+            parent_failure = _ensure_gonzalez_candidate_structure(
+                config=config,
+                dataset_id=dataset_id,
+                seed=seed,
+                X_train=X_train,
+                y_train=y_train,
+                row_ids=np.asarray(data["row_ids_train"]),
+                data_fingerprint=data_fingerprint,
+                options=options,
+            )
+            if parent_failure is not None:
+                return SelectionResult.failure(
+                    method_id, parent_failure[0], requested, parent_failure[1]
+                )
         structure = _resolve_structure(
             options, seed, structure_cache, config, dataset_id,
             np.asarray(data["row_ids_train"]), data_fingerprint,
@@ -541,11 +566,16 @@ def _produce_or_block(
         if isinstance(structure, str):
             return SelectionResult.failure(method_id, "blocked", requested, structure)
         kwargs["parent_ids"] = structure["parent_ids"]
-        if method_id == "p03_skq_bdis_filtered":
+        if method_id == "p03_skq_bdis_filtered" or bool(
+            options.get("use_parent_candidate_mask", False)
+        ):
             if "candidate_mask" not in structure:
-                return SelectionResult.failure(method_id, "blocked", requested, "BDIS structure thiếu candidate_mask")
+                return SelectionResult.failure(
+                    method_id, "blocked", requested,
+                    "Parent structure thiếu candidate_mask",
+                )
             kwargs["candidate_mask"] = structure["candidate_mask"]
-    if method_id in {"p04_skq_lrq_sq", "p05_skq_lrq_mq"}:
+    if method_id in LRQ_METHODS:
         query_ids = tuple(options.get("query_learners", ["lr"] if method_id.endswith("sq") else ["lr", "rf", "xgb"]))
         cache_key = (query_ids, seed)
         if cache_key not in query_cache:
@@ -578,6 +608,12 @@ def _produce_or_block(
         result.timings["parent_structure"] = parent_total
         result.timings["query"] = query_total
         result.timings["total"] = own_total + parent_total + query_total
+        result.diagnostics.setdefault("parent_source", str(options.get("parent_source")))
+        if str(options.get("parent_source", "")).startswith(GONZALEZ_PARENT_PREFIX):
+            result.diagnostics.setdefault(
+                "gonzalez_candidate_multiplier",
+                float(options.get("candidate_multiplier", 1.0)),
+            )
     if getattr(selector, "structure_parent_ids_", None) is not None:
         structure = {
             "parent_ids": np.asarray(selector.structure_parent_ids_, dtype=np.int64),
@@ -595,6 +631,152 @@ def _produce_or_block(
             config, dataset_id, method_id, seed, structure, result, data_fingerprint,
         )
     return result
+
+
+def _ensure_gonzalez_candidate_structure(
+    *,
+    config: ExperimentConfig,
+    dataset_id: str,
+    seed: int,
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    row_ids: np.ndarray,
+    data_fingerprint: str,
+    options: dict[str, Any],
+) -> tuple[str, str] | None:
+    """Tạo/lưu candidate Gonzalez dùng chung mà không thêm một utility row giả.
+
+    Pool là artifact trung gian, không phải method được chấm điểm. Tên source và
+    multiplier phải khớp tuyệt đối để protocol hash/provenance không nhập nhằng.
+    Gonzalez upstream vẫn chạy nguyên hàm benchmark; SKQ chỉ dùng mask kết quả.
+    """
+    source = str(options.get("parent_source", ""))
+    multiplier = float(options.get("candidate_multiplier", 1.0))
+    if multiplier not in {1.0, 2.0}:
+        return "blocked", "Gonzalez candidate_multiplier chỉ cho phép 1.0 hoặc 2.0 trong protocol v3"
+    expected_source = f"gonzalez_pool_{int(multiplier)}x"
+    if source != expected_source:
+        return (
+            "blocked",
+            f"parent_source={source!r} không khớp candidate_multiplier={multiplier:g}; "
+            f"cần {expected_source!r}",
+        )
+    try:
+        requested_groups = int(options.get("gonzalez_structure_groups", 128))
+    except (TypeError, ValueError):
+        return "blocked", "gonzalez_structure_groups phải là số nguyên dương"
+    if requested_groups < 1:
+        return "blocked", "gonzalez_structure_groups phải là số nguyên dương"
+
+    structure_path = (
+        config.paths.artifact_root / "structures" / config.experiment_id /
+        dataset_id / source / f"ss{seed}" / "structure.npz"
+    )
+    if structure_path.exists():
+        metadata_path = structure_path.with_name("structure.json")
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            diagnostics = metadata["diagnostics"]
+            if (
+                float(diagnostics["candidate_multiplier"]) != multiplier
+                or int(diagnostics["structure_groups_requested"]) != requested_groups
+            ):
+                return (
+                    "blocked",
+                    "Gonzalez structure đã có nhưng không khớp multiplier/số anchor; "
+                    "hãy dùng experiment_id mới hoặc xóa artifact trung gian cũ",
+                )
+        except (OSError, ValueError, TypeError, KeyError) as error:
+            return "blocked", f"Gonzalez structure metadata không hợp lệ: {error!r}"
+        return None
+
+    candidate_ratio = min(1.0, float(config.budget_ratio) * multiplier)
+    candidate_rows = max(1, int(round(len(y_train) * candidate_ratio)))
+    try:
+        estimate = estimate_selection_cost(
+            "n_gcoreset_benchmark",
+            len(y_train),
+            X_train.shape[1],
+            candidate_rows,
+            n_classes=len(np.unique(y_train)),
+        )
+        enforce_preflight(estimate, config.resource)
+        selector = build_selector(
+            "n_gcoreset_benchmark",
+            seed,
+            external_root=config.paths.external_root,
+        )
+        parent_result = selector.select(X_train, y_train, candidate_ratio)
+    except ResourceLimitError as error:
+        return error.status, str(error)
+    except Exception as error:
+        return "failed", f"Không tạo được Gonzalez candidate pool: {error!r}"
+    if parent_result.status != "success":
+        return (
+            parent_result.status,
+            str(parent_result.diagnostics.get("reason", "Gonzalez candidate pool lỗi")),
+        )
+
+    center_indices = np.asarray(parent_result.indices, dtype=np.int64)
+    candidate_mask = np.zeros(len(y_train), dtype=bool)
+    candidate_mask[center_indices] = True
+    anchor_indices = center_indices[:min(requested_groups, len(center_indices))]
+    try:
+        parent_ids = _nearest_gonzalez_center_ids(
+            X_train, anchor_indices, ResourceGuard(config.resource)
+        )
+    except ResourceLimitError as error:
+        return error.status, str(error)
+    parent_result.diagnostics.update({
+        "artifact_role": "candidate_pool_only_not_utility_row",
+        "candidate_multiplier": multiplier,
+        "final_budget_ratio": float(config.budget_ratio),
+        "candidate_ratio": candidate_ratio,
+        "structure_rule": (
+            "nearest predeclared Gonzalez anchor Voronoi ID on every train row; "
+            "candidate mask keeps the complete 1x/2x Gonzalez pool"
+        ),
+        "structure_groups_requested": requested_groups,
+        "structure_groups": int(len(anchor_indices)),
+    })
+    structure = {
+        "parent_ids": parent_ids,
+        "row_ids": np.asarray(row_ids, dtype=np.int64),
+        "candidate_mask": candidate_mask,
+        "_producer_total_seconds": np.asarray(
+            parent_result.timings.get("total", 0.0), dtype=np.float64
+        ),
+    }
+    _save_structure(
+        config, dataset_id, source, seed, structure, parent_result,
+        data_fingerprint,
+    )
+    return None
+
+
+def _nearest_gonzalez_center_ids(
+    X_train: np.ndarray,
+    center_indices: np.ndarray,
+    guard: ResourceGuard,
+    *,
+    batch_rows: int = 512,
+) -> np.ndarray:
+    """Gán Voronoi ID theo batch để không tạo ma trận n×anchor trong RAM."""
+    X = np.asarray(X_train, dtype=np.float32)
+    centers = X[np.asarray(center_indices, dtype=np.int64)]
+    center_norm = np.sum(centers * centers, axis=1)
+    assignments = np.empty(len(X), dtype=np.int64)
+    for start in range(0, len(X), batch_rows):
+        guard.check("gonzalez_voronoi_assignment")
+        stop = min(len(X), start + batch_rows)
+        block = X[start:stop]
+        distances = (
+            np.sum(block * block, axis=1)[:, None]
+            + center_norm[None, :]
+            - 2.0 * (block @ centers.T)
+        )
+        assignments[start:stop] = np.argmin(distances, axis=1)
+    return assignments
 
 
 def _validate_lrq_gate(config, options, freeze_manifest):
@@ -731,6 +913,12 @@ def _save_structure(
 
 
 def _structure_extraction_rule(method_id: str) -> str:
+    if method_id.startswith(GONZALEZ_PARENT_PREFIX):
+        return (
+            "Gonzalez farthest-first candidate mask at predeclared budget multiplier; "
+            "parent stratum is nearest predeclared Gonzalez-anchor Voronoi ID assigned "
+            "to every train row"
+        )
     rules = {
         "n01_coretab_dt_subset": "CoreTab-DT apply leaf ID on every train row",
         "n02_coretab_xgb_subset": "CoreTab-XGB pred_leaf vector on every train row",

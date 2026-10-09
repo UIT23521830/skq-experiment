@@ -16,7 +16,7 @@ for method theo thứ tự config:
         gọi repo synthetic đã khóa, lưu generated_train.npz
     elif proposed:
         nạp parent structure đã sinh
-        nếu P04/P05: tạo OOF query loss chỉ từ train
+        nếu P04/P05/P08/P09: tạo OOF query loss chỉ từ train
         class quota → deterministic coarsening → exact group quota
         → RFF → exact squared-distance herding → simplex-QP
     elif D05:
@@ -45,12 +45,18 @@ aggregate; chỉ sau dev freeze mới được mở test
 | P01, P02 | hoàn tất và đã smoke Adult | N01/N02 structure |
 | P03 | hoàn tất theo candidate-mask contract | BDIS phải qua gate; realized=min(mục tiêu 5%, BDIS pool), lưu requested/realized size và không coi pool nhỏ hơn 5% là lỗi tài nguyên |
 | P04, P05 | code + gate hoàn tất | s1 screen trên dev với parent khai báo trước và nhãn pre-freeze; confirmatory/test bắt buộc frozen base winner |
+| P06 | code + smoke Adult hoàn tất | Gonzalez đúng 1× budget làm candidate; Voronoi theo 128 anchor + QP chỉ đổi trọng số, không đổi index |
+| P07 | code + smoke Adult hoàn tất | Gonzalez tạo pool 2×, SKQ nén về exact budget; pool chỉ là artifact trung gian |
+| P08, P09 | code + smoke Adult hoàn tất | P07 + OOF query loss; s1 dev screen được chạy, confirmatory/test vẫn bắt buộc freeze |
 | D02, D04, D05 | hoàn tất | D02 cần parent; D05 cần source selection cùng run |
 
 ## Không được tuyên bố quá mức
 
 - Pilot một seed trên dev chỉ là integration evidence.
-- P04/P05 ở pilot chỉ là dev screen, không được ghi là confirmatory; freeze vẫn phải xác nhận đúng base source trước khi mở test.
+- P04/P05/P08/P09 ở pilot chỉ là dev screen, không được ghi là confirmatory; freeze vẫn phải xác nhận đúng base source trước khi mở test.
+- P06–P09 là các biến thể đề xuất trong protocol v3 để làm ablation/screening;
+  không được ghi là phương pháp SOTA đã xuất bản. Chọn winner phải dùng tiêu chí
+  đã khai báo trước trên dev và giữ đầy đủ kết quả của mọi biến thể.
 - Native CoreTab chạy ở realized size, không phải exact 5%.
 - Gonzalez/Leverage chạy trực tiếp function từ benchmark repo đã khóa; vẫn ghi là
   official-source adapter vì output contract của upstream không trùng contract

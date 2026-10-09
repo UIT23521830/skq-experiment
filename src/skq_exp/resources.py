@@ -73,7 +73,10 @@ def estimate_selection_cost(
         # Hệ số 128 đại diện hidden width của profile pilot mặc định.
         operations += float(100 * n_rows * n_features * 128)
         base_bytes += int((n_rows + budget_rows) * 128 * max(2, n_classes) * 8)
-    if method_id in {"p04_skq_lrq_sq", "p05_skq_lrq_mq"}:
+    if method_id in {
+        "p04_skq_lrq_sq", "p05_skq_lrq_mq",
+        "p08_skq_gonzalez_lrq_sq", "p09_skq_gonzalez_lrq_mq",
+    }:
         operations += float(5 * n_rows * n_features * (3 if method_id.endswith("mq") else 1))
     working_bytes = int((base_bytes + rff_bytes) * 1.8)
     return CostEstimate(rff_bytes, working_bytes, operations)

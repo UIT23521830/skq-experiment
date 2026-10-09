@@ -2,8 +2,10 @@
 
 Trạng thái: implementation của nhóm tác giả dự án, không phải code từ paper đối
 chứng. P01/P02 dùng cấu trúc CoreTab, P03 dùng candidate BDIS, còn P04/P05 thêm
-query-loss ngoài-fold. Ở vòng screen, parent của P04/P05 phải được khai báo trước
-và kết quả chỉ là thăm dò trên dev; vòng confirmatory vẫn cần base winner đã freeze.
+query-loss ngoài-fold. P06 giữ candidate Gonzalez 5% để cô lập đóng góp QP;
+P07 dùng candidate Gonzalez 2x rồi nén về 5%; P08/P09 thêm query-loss ngoài-fold
+trên candidate đó. Ở vòng screen, mọi parent/query phải được khai báo trước và
+kết quả chỉ là thăm dò trên dev; vòng confirmatory vẫn cần winner đã freeze.
 Cơ chế chung: chia budget theo structure×class, ánh xạ RFF, chọn dòng thật
 bằng kernel herding rồi tối ưu trọng số simplex-QP trong từng nhóm. Loại
 đầu ra: subset dòng thật có trọng số.
