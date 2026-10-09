@@ -3,11 +3,22 @@
 Trạng thái: benchmark-source adapter, không tuyên bố là native source của paper
 KIP/MTT hay tái lập toàn bộ thiết lập paper. Adapter gọi hàm TDBench ở commit đã
 khóa, đổi budget tổng sang số mẫu mỗi lớp theo contract của repo và áp dụng các
-bản vá hẹp, có khai báo trong diagnostics: import JAX hiện hành cho KIP; bật
-gradient, snapshot đúng expert và lấy mẫu quỹ đạo biến thiên cho MTT theo cơ chế
-code MTT chính thức. KIP sinh dữ liệu bằng kernel inducing points; MTT sinh dữ
-liệu bằng cách khớp quỹ đạo huấn luyện. Loại đầu ra của cả hai là bảng train tổng
-hợp, không phải subset dòng thật.
+bản vá hẹp, có khai báo trong diagnostics: import JAX hiện hành cho KIP;
+MTT có bảy patch được liệt kê ngay tại ``_patch_tdbench_source``. KIP sinh dữ
+liệu bằng kernel inducing points; MTT sinh dữ liệu bằng cách khớp quỹ đạo
+huấn luyện. Loại đầu ra của cả hai là bảng train tổng hợp, không phải
+subset dòng thật.
+
+Vì sao MTT được ghi là adapter thay vì TDBench nguyên trạng:
+1. mỗi expert dùng seed riêng, thay cho việc lặp lại seed đầu tiên;
+2. snapshot tham số ban đầu và theo epoch được ``clone`` để không trỏ chung storage;
+3. synthetic features và synthetic learning-rate được bật gradient;
+4. RNG chọn quỹ đạo được tạo một lần và không reset trong mỗi iteration.
+Bảy patch (1 seed + 2 snapshot + 2 gradient + 2 RNG)
+khôi phục động lực huấn luyện mà source TDBench đã khóa không thực thi
+đúng. Chúng không đổi hàm mục tiêu trajectory matching, nhưng có thay đổi
+source thực thi; vì vậy fidelity bắt buộc là ``benchmark-source adapter with
+declared patches``, không được ghi là native hay upstream-unmodified.
 
 KIP/MTT được đưa vào bài làm baseline dataset distillation mạnh để so sánh utility
 của một tập train rất nhỏ với SKQ. Adapter không đặt trần số dòng tùy ý: budget là
@@ -294,7 +305,13 @@ def _load_distill_module(repo: Path, module_name: str):
 
 
 def _patch_tdbench_source(module_name: str, source: str) -> tuple[str, list[str]]:
-    """Áp dụng patch tối thiểu; source lệch mẫu đã khóa thì dừng thay vì vá mơ hồ."""
+    """Áp dụng patch tối thiểu; source lệch mẫu đã khóa thì dừng.
+
+    MTT có đúng bảy patch khai báo. Chúng sửa lỗi thực thi làm expert
+    trùng seed, snapshot bị alias, synthetic tensor không nhận gradient và quỹ
+    đạo bị chọn lặp lại. Do source đã thay đổi, artifact luôn phải mang
+    nhãn benchmark-source adapter và danh sách patch, dù mục tiêu MTT không đổi.
+    """
     patches: list[str] = []
     if module_name == "kip":
         source = _replace_once(
@@ -305,6 +322,8 @@ def _patch_tdbench_source(module_name: str, source: str) -> tuple[str, list[str]
         )
         patches.append("kip_jax_config_import_compat")
     elif module_name == "trajectory_matching":
+        # Patch 1/7: TDBench cũ luôn lấy expert_seeds[0], làm các expert
+        # trùng khởi tạo. Dùng seed thứ i để tập expert thực sự đa dạng.
         source = _replace_once(
             source,
             "random_state = expert_seeds[0]",
@@ -312,6 +331,8 @@ def _patch_tdbench_source(module_name: str, source: str) -> tuple[str, list[str]
             "mtt_distinct_expert_seeds",
         )
         source = _replace_once(
+            # Patch 2/7: clone snapshot khởi tạo, tránh tensor cũ cùng trỏ
+            # vào storage sẽ tiếp tục bị optimizer cập nhật.
             source,
             "trajectories.append([p.detach().cpu() for p in model.parameters()])\n"
             "        opt_model = optim.SGD",
@@ -320,6 +341,8 @@ def _patch_tdbench_source(module_name: str, source: str) -> tuple[str, list[str]
             "mtt_clone_initial_expert_snapshot",
         )
         source = _replace_once(
+            # Patch 3/7: clone cả snapshot sau mỗi epoch vì đây là các
+            # điểm đích của trajectory matching.
             source,
             "trajectories.append([p.detach().cpu() for p in model.parameters()])\n"
             "        all_trajectories.append",
@@ -328,18 +351,23 @@ def _patch_tdbench_source(module_name: str, source: str) -> tuple[str, list[str]
             "mtt_clone_epoch_expert_snapshots",
         )
         source = _replace_once(
+            # Patch 4/7: dữ liệu synthetic là biến tối ưu; nếu không
+            # requires_grad thì MTT trở thành no-op trên X_syn.
             source,
             "X_syn = torch.tensor(X[support_idxs]).float().to(device)",
             "X_syn = torch.tensor(X[support_idxs]).float().to(device).requires_grad_(True)",
             "mtt_trainable_synthetic_data",
         )
         source = _replace_once(
+            # Patch 5/7: learning-rate synthetic cũng nằm trong optimizer MTT.
             source,
             "syn_lr = torch.tensor(lr_teacher).to(device)",
             "syn_lr = torch.tensor(lr_teacher).to(device).requires_grad_(True)",
             "mtt_trainable_learning_rate",
         )
         source = _replace_once(
+            # Patch 6/7: tạo RNG một lần để chuỗi start_epoch thay đổi
+            # có tái lập qua các iteration.
             source,
             "param_cache = {}\n\n"
             "    for it in range(n_iter):",
@@ -349,6 +377,8 @@ def _patch_tdbench_source(module_name: str, source: str) -> tuple[str, list[str]
             "mtt_persistent_trajectory_rng",
         )
         source = _replace_once(
+            # Patch 7/7: bỏ reset RNG trong loop; reset khiến iteration nào
+            # cũng lấy cùng một đoạn quỹ đạo.
             source,
             "        rng = random.Random(random_state)\n"
             "        start_epoch = rng.randint(0, max_start_epoch)",

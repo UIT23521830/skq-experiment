@@ -58,10 +58,42 @@ def test_structured_kquad_coarsens_microstrata_before_allocation() -> None:
     assert result.diagnostics["max_mass_error"] <= 1e-8
 
 
+def test_structured_kquad_exact_policy_rejects_small_candidate_pool() -> None:
+    rng = np.random.default_rng(23)
+    X = rng.normal(size=(20, 5)).astype(np.float32)
+    y = np.repeat([0, 1], 10)
+    candidates = np.zeros(20, dtype=bool)
+    candidates[[0, 2, 4, 10, 12, 14]] = True
+    result = StructuredKQuadSelector(
+        "p02_skq_coretab_xgb", seed=11, n_components=16,
+    ).select(X, y, 0.4, candidate_mask=candidates)
+    assert result.status == "budget_infeasible"
+    assert result.requested_rows == 8
+
+
+def test_p03_caps_realized_size_at_bdis_candidate_pool() -> None:
+    rng = np.random.default_rng(29)
+    X = rng.normal(size=(20, 5)).astype(np.float32)
+    y = np.repeat([0, 1], 10)
+    candidates = np.zeros(20, dtype=bool)
+    candidates[[0, 2, 4, 10, 12, 14]] = True
+    result = StructuredKQuadSelector(
+        "p03_skq_bdis_filtered", seed=11, n_components=16,
+        budget_policy="cap_at_candidate_pool",
+    ).select(X, y, 0.4, candidate_mask=candidates)
+    assert result.status == "success"
+    assert result.requested_rows == 8
+    assert result.realized_rows == 6
+    assert result.budget_mode == "candidate_pool_capped"
+    assert result.diagnostics["parent_pool_limited"] is True
+    assert result.diagnostics["requested_ratio"] == 0.4
+    assert result.diagnostics["realized_ratio"] == 0.3
+    assert np.isclose(result.weights.sum(), len(y), atol=1e-8)
+
+
 def test_kernel_herding_uses_squared_distance_objective() -> None:
     Z = np.asarray([[5.0, 0.0], [1.0, 2.0], [-2.0, 1.0]], dtype=np.float64)
     target = Z.mean(axis=0)
     expected = int(np.argmin(np.sum((Z - target) ** 2, axis=1)))
     selected = kernel_herding(Z, 1, np.asarray([10, 11, 12]), seed=11)
     assert selected.tolist() == [expected]
-

@@ -83,7 +83,10 @@ METHOD_SPECS = {
         MethodSpec(
             "s_mtt_tdbench", "MTT-TDBench", "synthetic", "implemented",
             output_kind="synthetic",
-            note="TDBench-source adapter; sinh dữ liệu bằng trajectory matching, có resource gate.",
+            note=(
+                "Benchmark-source adapter có 7 patch khai báo; khôi phục gradient, "
+                "snapshot và RNG cho trajectory matching; không phải TDBench nguyên trạng."
+            ),
         ),
         MethodSpec(
             "s_tame_official", "TAME official", "synthetic", "implemented",
@@ -104,7 +107,10 @@ METHOD_SPECS = {
         ),
         MethodSpec(
             "p03_skq_bdis_filtered", "SKQ-BDIS-Filtered", "proposed", "implemented", True,
-            note="Đề xuất: candidate BDIS + phân bổ có cấu trúc + RFF herding + simplex-QP.",
+            note=(
+                "Đề xuất: candidate BDIS + phân bổ có cấu trúc + RFF herding + "
+                "simplex-QP; realized=min(mục tiêu 5%, BDIS pool) và báo cáo size thực."
+            ),
         ),
         MethodSpec(
             "p04_skq_lrq_sq", "SKQ-LRQ-SQ", "proposed", "implemented", True,
@@ -173,6 +179,7 @@ def build_selector(method_id: str, seed: int, *, n_components: int = 256, extern
             method_id, seed=seed, n_components=n_components,
             bandwidth_multiplier=float(options.get("bandwidth_multiplier", 1.0)),
             query_alpha=float(options.get("query_alpha", default_alpha)),
+            budget_policy=str(options.get("budget_policy", "exact_total")),
         )
     raise RuntimeError(f"Factory chưa có implementation cho {method_id}")
 
