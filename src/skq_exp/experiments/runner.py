@@ -40,6 +40,7 @@ from ..training import (
     fit_generated_learner,
     fit_selection_learner,
 )
+from .provenance import dataset_fingerprint, protocol_hash
 
 
 def run_smoke(config: ExperimentConfig) -> list[dict[str, Any]]:
@@ -111,7 +112,7 @@ def run_config(
     layout = ArtifactLayout(config.paths.artifact_root)
     for current_dataset in datasets:
         data = load_processed(current_dataset, config.paths.processed_root)
-        data_fingerprint = _dataset_fingerprint(config, current_dataset)
+        data_fingerprint = dataset_fingerprint(config, current_dataset)
         if config.stage_id == "s2_confirm" or config.requires_freeze_manifest:
             expected = freeze_manifest["dataset_fingerprints"].get(current_dataset)
             if expected != data_fingerprint:
@@ -826,7 +827,7 @@ def _manifest(
         "budget_ratio": config.budget_ratio, "selector_seed": selector_seed,
         "learner_id": learner_id, "model_seed": config.model_seed,
         "evaluation_split": eval_name, "data_fingerprint": data_fingerprint,
-        "protocol_hash": _protocol_hash(config),
+        "protocol_hash": protocol_hash(config),
     }
     return {**identity, "run_id": stable_hash(identity)[:20], "package_version": __version__, "python": platform.python_version(), "created_unix": time.time()}
 
@@ -909,21 +910,6 @@ def _save_evaluation(
     atomic_json(run_dir / "metrics_all.json", metrics)
 
 
-def _protocol_hash(config: ExperimentConfig) -> str:
-    payload = config.to_dict()
-    payload.pop("paths", None)
-    payload.pop("resource", None)
-    payload.pop("artifact_policy", None)
-    return stable_hash(payload)
-
-
-def _dataset_fingerprint(config: ExperimentConfig, dataset_id: str) -> str:
-    manifest = config.paths.processed_root / dataset_id / "preprocessing_manifest.json"
-    if not manifest.exists():
-        raise FileNotFoundError(f"Thiếu preprocessing manifest: {manifest}")
-    return sha256_file(manifest)
-
-
 def _method_artifact_identity(
     config: ExperimentConfig,
     dataset_id: str,
@@ -943,7 +929,7 @@ def _method_artifact_identity(
         "split_seed": config.split_seed,
         "method_options": (config.method_options or {}).get(method_id, {}),
         "data_fingerprint": data_fingerprint,
-        "protocol_hash": _protocol_hash(config),
+        "protocol_hash": protocol_hash(config),
         "package_version": __version__,
     }
 

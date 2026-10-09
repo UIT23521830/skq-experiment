@@ -145,6 +145,34 @@ aggregate quét tất cả manifest, rồi archive chứa cả hai pha. File
 `kaggle_execution_summary.json`, `environment_panel.txt` và
 `environment_kip.txt` lưu provenance môi trường.
 
+### CourseQuality MED: full matrix trên bốn test
+
+Sau `prepare-external`, tạo freeze chuyển giao đã khai báo trước rồi chạy cùng
+orchestrator. Freeze này không tuyên bố là winner chọn từ CQ; nó khóa P02/P05 từ
+protocol Adult trước khi đọc metric CQ test:
+
+```bash
+!skq freeze --config configs/kaggle_course_quality_temporal.json \
+  --base-winner-method p02_skq_coretab_xgb \
+  --base-winner-structure n02_coretab_xgb_subset \
+  --published-reference n02_coretab_xgb_subset \
+  --proposed-winner p05_skq_lrq_mq \
+  --selection-basis transferred_from_adult_predeclared_before_cq_test
+
+!python scripts/run_kaggle_split_env.py \
+  --config configs/kaggle_course_quality_temporal.json \
+  --dataset course_quality_med_v1 \
+  --artifact-root /kaggle/working/skq_artifacts \
+  --archive /kaggle/working/skq_results.tar.gz \
+  --prepare-autocoreset \
+  --max-ram-gb 24 --timeout-seconds 21600 --max-threads 4
+```
+
+Plan full là 22 method × 5 learner và bốn temporal test, tức 440 ledger row.
+`--prepare-autocoreset` chạy boundary native trước panel; nếu upstream không hoàn
+tất, runner vẫn ghi trạng thái thật thay vì bỏ method. KIP bị resource gate hợp
+lệ không làm mất archive hoặc khiến Save & Run bị đánh lỗi hạ tầng.
+
 Runner hiện ghi đè đúng run directory khi cùng run ID và gộp ledger theo run ID,
 nhưng chưa có scheduler tự bỏ qua mọi run thành công. Vì vậy nên chạy theo method
 hoặc checkpoint sau từng nhóm trên Kaggle; không giả định lệnh bị ngắt sẽ tự resume

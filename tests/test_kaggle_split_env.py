@@ -58,3 +58,13 @@ def test_ledger_summary_preserves_kip_failures_and_successes(tmp_path: Path) -> 
     assert summary["rows"] == 2
     assert summary["status_counts"] == {"failed": 1, "success": 1}
     assert summary["kip_rows"][0]["reason"] == "plugin mismatch"
+
+
+def test_resource_gate_is_valid_kip_terminal_state() -> None:
+    module = _load_script()
+    assert module._resource_aware_success([
+        {"status": "predicted_oom"},
+        {"status": "predicted_timeout"},
+    ])
+    assert not module._resource_aware_success([{"status": "failed"}])
+    assert not module._resource_aware_success([])

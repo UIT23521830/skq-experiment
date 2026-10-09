@@ -41,6 +41,10 @@ KIP_UNINSTALL = (
     "jax-cuda12-plugin",
     "jax-cuda12-pjrt",
 )
+RESOURCE_TERMINAL_STATUSES = {
+    "success", "predicted_oom", "predicted_timeout", "oom", "timeout",
+    "storage_limit",
+}
 
 
 def _run(command: Sequence[str], *, env: dict[str, str] | None = None) -> int:
@@ -146,6 +150,13 @@ def _summarize_ledger(ledger_path: Path) -> dict:
     }
 
 
+def _resource_aware_success(rows: list[dict]) -> bool:
+    """Resource gate là kết quả hợp lệ; dependency/code failure thì không."""
+    return bool(rows) and all(
+        str(row.get("status")) in RESOURCE_TERMINAL_STATUSES for row in rows
+    )
+
+
 def _package(artifact_root: Path, archive_path: Path) -> None:
     archive_path.parent.mkdir(parents=True, exist_ok=True)
     with tarfile.open(archive_path, "w:gz") as handle:
@@ -168,6 +179,10 @@ def main() -> int:
         "--skip-kip-install", action="store_true",
         help="Chỉ dùng khi môi trường KIP đã được pin đúng từ trước.",
     )
+    parser.add_argument(
+        "--prepare-autocoreset", action="store_true",
+        help="Chạy boundary AutoCoreset trước panel; lỗi vẫn được runner ghi vào ledger.",
+    )
     args = parser.parse_args()
 
     config = ExperimentConfig.from_json(args.config)
@@ -180,6 +195,19 @@ def main() -> int:
     artifact_root.mkdir(parents=True, exist_ok=True)
     started = time.time()
     (artifact_root / "environment_panel.txt").write_text(_freeze(), encoding="utf-8")
+
+    autocoreset_return_codes: dict[str, int] = {}
+    if args.prepare_autocoreset:
+        datasets = [args.dataset] if args.dataset else list(config.dataset_ids)
+        for dataset_id in datasets:
+            for seed in config.selector_seeds:
+                key = f"{dataset_id}:ss{seed}"
+                autocoreset_return_codes[key] = _run([
+                    sys.executable, "scripts/run_autocoreset_native.py",
+                    "--config", str(Path(args.config).resolve()),
+                    "--dataset", dataset_id,
+                    "--seed", str(seed),
+                ])
 
     # Pha 1 giữ nguyên config để protocol hash của các method và KIP giống nhau.
     panel_rc = _run(_run_command(args, "--exclude-method", "s_kip_tdbench"))
@@ -222,15 +250,18 @@ def main() -> int:
     ])
     ledger_path = artifact_root / config.experiment_id / "run_ledger.json"
     ledger_summary = _summarize_ledger(ledger_path)
-    kip_success = bool(ledger_summary.get("kip_rows")) and all(
-        row.get("status") == "success" for row in ledger_summary["kip_rows"]
+    kip_rows = ledger_summary.get("kip_rows", [])
+    kip_success = bool(kip_rows) and all(
+        row.get("status") == "success" for row in kip_rows
     )
+    kip_resource_aware_success = _resource_aware_success(kip_rows)
     summary = {
         "repository_commit": _git_commit(),
         "config": str(Path(args.config).resolve()),
         "experiment_id": config.experiment_id,
         "dataset": args.dataset or list(config.dataset_ids),
         "strategy": "panel_without_kip_then_pinned_kip_same_config_and_artifact_root",
+        "autocoreset_return_codes": autocoreset_return_codes,
         "panel_return_code": panel_rc,
         "kip_uninstall_return_code": uninstall_rc,
         "kip_install_return_code": install_rc,
@@ -239,6 +270,7 @@ def main() -> int:
         "kip_run_return_code": kip_rc,
         "aggregate_return_code": aggregate_rc,
         "kip_all_learners_success": kip_success,
+        "kip_resource_aware_success": kip_resource_aware_success,
         "ledger": ledger_summary,
         "elapsed_seconds": time.time() - started,
     }
@@ -251,7 +283,10 @@ def main() -> int:
     print(f"\nĐã đóng gói: {archive_path}", flush=True)
 
     # Archive luôn được tạo; exit code khác 0 giúp Kaggle hiển thị rõ pha lỗi.
-    return 0 if panel_rc == 0 and kip_rc == 0 and aggregate_rc == 0 and kip_success else 2
+    return 0 if (
+        panel_rc == 0 and kip_rc == 0 and aggregate_rc == 0
+        and kip_resource_aware_success
+    ) else 2
 
 
 if __name__ == "__main__":

@@ -267,6 +267,14 @@ cả bốn test. Config temporal yêu cầu freeze manifest; P04/P05 không đư
 trước bước này. Khi stage là `s2_confirm` hoặc `s4_temporal`, runner bắt buộc
 CourseQuality có và đánh giá đủ bốn test.
 
+Nếu dùng cấu hình đã chốt từ Adult thay vì chọn lại trên CQ, tạo freeze chuyển
+giao **trước khi mở CQ test** bằng `skq freeze` và ghi
+`selection_basis=transferred_from_adult_predeclared_before_cq_test`. Đây vẫn chỉ
+là evidence integration vì snapshot CQ hiện có overlap. Lệnh Kaggle full dùng
+`scripts/run_kaggle_split_env.py --prepare-autocoreset`: 22 method × 5 learner ×
+4 test tạo 440 ledger row. Method vượt tài nguyên được giữ dưới trạng thái
+`predicted_oom`/`predicted_timeout`; không đổi thuật toán hoặc hạ budget 5%.
+
 Các dataset ngoài dùng chung lệnh `prepare-external`. Mỗi dataset có một module
 trong `src/skq_exp/data/adapters/`, kế thừa contract base hoặc khung CSV pre-split
 và được đăng ký tường minh trong adapter registry. Mọi dataset ngoài chỉ dùng

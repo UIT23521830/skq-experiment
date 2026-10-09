@@ -18,6 +18,7 @@ from pathlib import Path
 from .config import ExperimentConfig
 from .data import fetch_dataset, prepare_dataset, prepare_external_dataset
 from .experiments import run_config, run_smoke
+from .experiments.freeze import create_freeze_manifest
 from .methods import allowed_learners_for, get_method_spec
 from .reports import aggregate_results
 
@@ -77,6 +78,14 @@ def main(argv: list[str] | None = None) -> int:
         help="Không khởi chạy method nếu ước lượng phép tính vượt ngưỡng này.",
     )
     run.add_argument("--save-model", action="store_true", help="Lưu fitted model; mặc định không lưu.")
+    freeze = sub.add_parser("freeze")
+    freeze.add_argument("--config", required=True)
+    freeze.add_argument("--base-winner-method", required=True)
+    freeze.add_argument("--base-winner-structure", required=True)
+    freeze.add_argument("--published-reference", required=True)
+    freeze.add_argument("--proposed-winner", required=True)
+    freeze.add_argument("--selection-basis", required=True)
+    freeze.add_argument("--overwrite", action="store_true")
     aggregate = sub.add_parser("aggregate")
     aggregate.add_argument("--artifact-root", required=True)
     args = parser.parse_args(argv)
@@ -90,6 +99,17 @@ def main(argv: list[str] | None = None) -> int:
     config = ExperimentConfig.from_json(args.config)
     if args.command == "plan":
         print(json.dumps(_plan(config, include_cells=args.show_cells), indent=2, ensure_ascii=False))
+        return 0
+    if args.command == "freeze":
+        print(create_freeze_manifest(
+            config,
+            base_winner_method_id=args.base_winner_method,
+            base_winner_structure_source=args.base_winner_structure,
+            published_reference=args.published_reference,
+            proposed_winner=args.proposed_winner,
+            selection_basis=args.selection_basis,
+            overwrite=args.overwrite,
+        ))
         return 0
     if getattr(args, "selector_seed", None):
         config = replace(config, selector_seeds=tuple(args.selector_seed))
