@@ -75,16 +75,18 @@ Cell đầu tiên:
 ```bash
 !git clone https://github.com/<tai-khoan>/<ten-repo>.git /kaggle/working/skq_experiment
 %cd /kaggle/working/skq_experiment
-!python -m pip install -q -e ".[kaggle-full]"
+!python -m pip install -q -e ".[kaggle-panel,data]"
 !python scripts/fetch_official_repos.py
 !skq doctor
 ```
 
-`kaggle-full` cài cả BDIS (`faiss-cpu`), AutoCoreset
-(`iterative-stratification`) và KIP-TDBench (`jax==0.4.38`,
-`neural-tangents==0.6.5`). Pin JAX này giữ API mà source TDBench khóa commit đang
-dùng và có wheel Python 3.13. Nếu `skq doctor` vẫn báo thiếu một trong các gói này,
-run tương ứng phải được xem là `BLOCKED`, không phải kết quả utility.
+`kaggle-panel` cài BDIS (`faiss-cpu`), AutoCoreset
+(`iterative-stratification`), PyTorch và downstream learner nhưng chưa thay JAX
+có sẵn của Kaggle. KIP chạy ở pha thứ hai sau khi panel đã lưu xong;
+script `run_kaggle_split_env.py` sẽ đồng bộ `jax`, `jaxlib`,
+`jax-cuda12-plugin`, `jax-cuda12-pjrt` về 0.4.38 và giữ
+`neural-tangents==0.6.5`. Tất cả gói JAX/CUDA phải cùng version; chỉ pin
+`jax/jaxlib` trong khi để plugin Kaggle bản mới sẽ gây lỗi `_sparse`.
 
 Nếu Internet bị tắt, upload source dưới dạng Kaggle Dataset hoặc Notebook input,
 sau đó copy vào `/kaggle/working/skq_experiment`. Không sửa code trực tiếp trong
@@ -121,16 +123,26 @@ Trong config chạy, dùng:
 
 # 3. Quick check rồi candidate matrix; LRQ được screen trên dev với parent khai báo trước
 !skq run --config configs/pilot_adult_quick_seed11.json --selector-seed 11
-!skq run --config configs/pilot_adult_full_seed11.json --selector-seed 11 \
+!python scripts/run_kaggle_split_env.py \
+  --config configs/kaggle_pilot.json \
+  --dataset adult_uci2_v1 \
+  --artifact-root /kaggle/working/skq_artifacts \
+  --archive /kaggle/working/skq_results.tar.gz \
   --max-ram-gb 12 --timeout-seconds 7200 --max-threads 4
 
 # 4. Sau dev screen, tạo freeze_manifest schema v3 theo docs/freeze_manifest.example.json.
 #    Chỉ sau đó kết quả P04/P05 mới được phép đi vào confirmatory/test.
 !skq run --config configs/s2_confirm.json --dataset adult_uci2_v1
 
-# 5. Gom kết quả của những run đã hoàn thành
-!skq aggregate --artifact-root /kaggle/working/skq_artifacts
+# 5. Script hai pha đã aggregate và đóng gói; chỉ cần tải skq_results.tar.gz.
 ```
+
+Hai pha dùng cùng config, split, seed, `experiment_id`, artifact root và
+protocol hash. Pha panel gọi `--exclude-method s_kip_tdbench`; pha KIP gọi
+`--method s_kip_tdbench` trong process mới. Runner gộp ledger theo `run_id`,
+aggregate quét tất cả manifest, rồi archive chứa cả hai pha. File
+`kaggle_execution_summary.json`, `environment_panel.txt` và
+`environment_kip.txt` lưu provenance môi trường.
 
 Runner hiện ghi đè đúng run directory khi cùng run ID và gộp ledger theo run ID,
 nhưng chưa có scheduler tự bỏ qua mọi run thành công. Vì vậy nên chạy theo method

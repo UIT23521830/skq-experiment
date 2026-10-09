@@ -71,6 +71,7 @@ def run_config(
     dataset_id: str | None = None,
     method_id: str | None = None,
     learner_id: str | None = None,
+    exclude_method_ids: tuple[str, ...] = (),
     resume: bool = False,
     reuse_method_artifacts: bool = False,
 ) -> list[dict[str, Any]]:
@@ -78,11 +79,23 @@ def run_config(
         return run_smoke(config)
     datasets = [dataset_id] if dataset_id else list(config.dataset_ids)
     freeze_manifest = _load_freeze_manifest(config, required=config.stage_id == "s2_confirm")
-    methods = [method_id] if method_id else list(config.method_ids)
+    excluded = set(exclude_method_ids)
+    unknown_excluded = excluded - set(config.method_ids)
+    if unknown_excluded:
+        raise ValueError(
+            f"Method loại trừ không có trong config: {sorted(unknown_excluded)}"
+        )
+    if method_id is not None and method_id in excluded:
+        raise ValueError(f"Method {method_id} vừa được chọn vừa bị loại trừ")
+    methods = [method_id] if method_id else [
+        item for item in config.method_ids if item not in excluded
+    ]
     if config.stage_id == "s2_confirm" and method_id is None:
         role_map = freeze_manifest["method_roles"]
         methods.extend(str(role_map[role]) for role in config.frozen_method_roles)
-        methods = list(dict.fromkeys(methods))
+        methods = [item for item in dict.fromkeys(methods) if item not in excluded]
+    if not methods:
+        raise ValueError("Không còn method nào để chạy sau khi loại trừ")
     learners = [learner_id] if learner_id else list(config.learner_ids)
     ledger: list[dict[str, Any]] = []
     layout = ArtifactLayout(config.paths.artifact_root)

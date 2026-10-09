@@ -213,6 +213,9 @@ Guard bảo vệ máy gồm:
 - CRAIG tính cả ma trận pairwise O(n²) trong dự báo RAM;
 - KIP tính cả kernel target-support, gradient và optimizer trong dự báo RAM;
 - KIP/MTT không có trần budget tùy ý; OOM/timeout thật được ghi tách biệt;
+- Trên Kaggle, `scripts/run_kaggle_split_env.py` chạy panel trước, sau đó
+  pin đồng bộ JAX/CUDA 0.4.38 và chạy riêng KIP trong process mới; hai
+  pha vẫn dùng cùng protocol hash và được đóng gói chung;
 - trạng thái dừng được ghi vào manifest/ledger.
 
 Repo ngoài không phải method nào cũng có điểm kiểm tra giữa vòng; với chúng,
