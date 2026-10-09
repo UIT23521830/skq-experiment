@@ -9,6 +9,8 @@ iterative-stratification>=0.1.9,<1
 # Pin theo API mà source TDBench đã khóa commit đang dùng; 0.4.38 có wheel Python 3.13.
 jax==0.4.38
 jaxlib==0.4.38
+jax-cuda12-plugin[with-cuda]==0.4.38
+jax-cuda12-pjrt==0.4.38
 neural-tangents==0.6.5
 pytest>=8,<9
 kagglehub>=0.3,<1

@@ -114,6 +114,15 @@ class ExperimentConfig:
         if set(self.learner_ids) - valid_learners:
             raise ValueError(f"Learner chưa đăng ký: {sorted(set(self.learner_ids) - valid_learners)}")
         options = self.method_options or {}
+        invalid_contracts = {}
+        for method_id, method_config in options.items():
+            if "allowed_learners" not in method_config:
+                continue
+            allowed = tuple(method_config["allowed_learners"])
+            if not allowed or set(allowed) - valid_learners:
+                invalid_contracts[method_id] = list(allowed)
+        if invalid_contracts:
+            raise ValueError(f"method_options.allowed_learners không hợp lệ: {invalid_contracts}")
         missing_parent = [
             method_id for method_id in self.method_ids
             if METHOD_SPECS[method_id].needs_parent

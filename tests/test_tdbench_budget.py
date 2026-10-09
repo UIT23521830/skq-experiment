@@ -7,6 +7,7 @@ from skq_exp.methods.synthetic.tdbench import (
     _count_exact_training_pairs,
     _patch_tdbench_source,
     _plan_tdbench_budget,
+    _validate_trajectory_options,
 )
 
 
@@ -84,6 +85,52 @@ def test_mtt_patch_makes_synthetic_data_and_learning_rate_trainable() -> None:
         "mtt_persistent_trajectory_rng",
         "mtt_remove_per_iteration_rng_reset",
     ]
+
+
+def test_gradient_matching_patch_makes_synthetic_data_trainable() -> None:
+    source = "X_syn = torch.tensor(X[support_idxs]).float().to(device)\n"
+    patched, patch_ids = _patch_tdbench_source("gradient_matching", source)
+    assert patched.count("requires_grad_(True)") == 1
+    assert patch_ids == ["gm_trainable_synthetic_data"]
+
+
+def test_datm_uses_declared_trajectory_patches() -> None:
+    source = (
+        "random_state = expert_seeds[0]\n"
+        "trajectories.append([p.detach().cpu() for p in model.parameters()])\n"
+        "        opt_model = optim.SGD\n"
+        "trajectories.append([p.detach().cpu() for p in model.parameters()])\n"
+        "        all_trajectories.append\n"
+        "X_syn = torch.tensor(X[support_idxs]).float().to(device)\n"
+        "syn_lr = torch.tensor(lr_teacher).to(device)\n"
+        "param_cache = {}\n\n"
+        "    for it in range(n_iter):\n"
+        "        rng = random.Random(random_state)\n\n"
+        "        upper_bound = current_max_start_epoch\n"
+    )
+    patched, patch_ids = _patch_tdbench_source("datm", source)
+    assert patched.count("requires_grad_(True)") == 2
+    assert patched.count("cpu().clone()") == 2
+    assert patched.count("random.Random(random_state)") == 1
+    assert len(patch_ids) == 7
+    assert all(item.startswith("datm_") for item in patch_ids)
+
+
+def test_trajectory_config_rejects_snapshot_out_of_range() -> None:
+    parameters = {
+        "n_epochs": 5,
+        "n_experts": 1,
+        "expert_epochs": 2,
+        "syn_steps": 1,
+        "n_iter": 1,
+        "max_start_epoch": 4,
+    }
+    try:
+        _validate_trajectory_options(parameters)
+    except ValueError as error:
+        assert "max_start_epoch" in str(error)
+    else:
+        raise AssertionError("Cấu hình vượt trajectory phải bị từ chối")
 
 
 def test_exact_training_pair_counter_detects_mtt_noop_output() -> None:
