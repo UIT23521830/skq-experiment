@@ -4,10 +4,16 @@ Trạng thái: implementation của nhóm tác giả dự án, không phải cod
 chứng. P01/P02 dùng cấu trúc CoreTab, P03 dùng candidate BDIS, còn P04/P05 thêm
 query-loss ngoài-fold. Ở vòng screen, parent của P04/P05 phải được khai báo trước
 và kết quả chỉ là thăm dò trên dev; vòng confirmatory vẫn cần base winner đã freeze.
-Cơ chế chung: chia exact
-budget theo structure×class, ánh xạ RFF, chọn dòng thật bằng kernel herding rồi
-tối ưu trọng số simplex-QP trong từng nhóm. Loại đầu ra: subset dòng thật có trọng
-số và đúng tổng budget.
+Cơ chế chung: chia budget theo structure×class, ánh xạ RFF, chọn dòng thật
+bằng kernel herding rồi tối ưu trọng số simplex-QP trong từng nhóm. Loại
+đầu ra: subset dòng thật có trọng số.
+
+P01/P02/P04/P05 giữ exact budget. Riêng P03 có thể khai báo
+``cap_at_candidate_pool``: 5% chỉ là mục tiêu thực nghiệm, còn BDIS native
+pool là miền ứng viên thực sự. Nếu pool nhỏ hơn mục tiêu, P03 dùng toàn
+bộ pool và ghi cả requested/realized size để so sánh có điều kiện theo
+kích thước. Đây không phải resource gate, không pad/trùng dòng và không đổi
+BDIS thành subset khác.
 
 Các biến thể này là đóng góp chính cần được so với native, benchmark, synthetic
 và control. Test vẫn bị GATE_LOCKED trước freeze để tránh chọn cấu hình sau khi đã
@@ -39,6 +45,7 @@ class StructuredKQuadSelector(BaseSelector):
         use_qp: bool = True,
         random_within_group: bool = False,
         query_alpha: float = 1.0,
+        budget_policy: str = "exact_total",
     ):
         super().__init__(seed)
         self.method_id = method_id
@@ -47,6 +54,11 @@ class StructuredKQuadSelector(BaseSelector):
         self.use_qp = bool(use_qp)
         self.random_within_group = bool(random_within_group)
         self.query_alpha = float(query_alpha)
+        if budget_policy not in {"exact_total", "cap_at_candidate_pool"}:
+            raise ValueError(
+                "budget_policy phải là exact_total hoặc cap_at_candidate_pool"
+            )
+        self.budget_policy = budget_policy
 
     def select(
         self,
@@ -77,13 +89,25 @@ class StructuredKQuadSelector(BaseSelector):
         )
         if candidate_mask.shape != y_train.shape:
             raise ValueError("candidate_mask phải cùng chiều y_train")
-        if int(candidate_mask.sum()) < requested:
+        candidate_rows = int(candidate_mask.sum())
+        realized_target = requested
+        parent_pool_limited = candidate_rows < requested
+        if parent_pool_limited and self.budget_policy == "cap_at_candidate_pool":
+            realized_target = candidate_rows
+            if realized_target < len(np.unique(y_train)):
+                return SelectionResult.failure(
+                    self.method_id, "budget_infeasible", requested,
+                    "Candidate pool nhỏ hơn số lớp nên không thể bảo đảm class coverage",
+                )
+        elif parent_pool_limited:
             return SelectionResult.failure(
                 self.method_id, "budget_infeasible", requested,
                 "Candidate pool nhỏ hơn exact budget",
             )
         try:
-            allocation = allocate_classwise(parent_ids, y_train, candidate_mask, requested)
+            allocation = allocate_classwise(
+                parent_ids, y_train, candidate_mask, realized_target
+            )
             group_ids = allocation.group_ids
             groups = allocation.groups
             capacities = allocation.population_capacities
@@ -176,7 +200,7 @@ class StructuredKQuadSelector(BaseSelector):
                 "Simplex-QP không hội tụ hoặc vi phạm simplex tolerance; không dùng fallback",
             )
         indices = validate_exact_selection(
-            np.concatenate(selected_parts), len(y_train), requested
+            np.concatenate(selected_parts), len(y_train), realized_target
         )
         weights = np.concatenate(weight_parts)
         class_coverage = len(np.unique(y_train[indices])) / len(np.unique(y_train))
@@ -196,8 +220,12 @@ class StructuredKQuadSelector(BaseSelector):
             indices=indices,
             weights=weights,
             requested_rows=requested,
-            realized_rows=requested,
-            budget_mode="exact_total",
+            realized_rows=realized_target,
+            budget_mode=(
+                "candidate_pool_capped"
+                if parent_pool_limited and self.budget_policy == "cap_at_candidate_pool"
+                else "exact_total"
+            ),
             method_id=self.method_id,
             diagnostics={
                 "n_groups": int(len(groups)),
@@ -215,7 +243,13 @@ class StructuredKQuadSelector(BaseSelector):
                 "kernel_block_scale": kernel_scale,
                 "query_block_scale": query_scale,
                 "bandwidth_multiplier": self.bandwidth_multiplier,
-                "candidate_rows": int(candidate_mask.sum()),
+                "candidate_rows": candidate_rows,
+                "requested_rows": requested,
+                "realized_rows": realized_target,
+                "requested_ratio": float(requested / len(y_train)),
+                "realized_ratio": float(realized_target / len(y_train)),
+                "budget_policy": self.budget_policy,
+                "parent_pool_limited": parent_pool_limited,
                 "query_alpha": self.query_alpha if query_features is not None else None,
                 "query_metadata": query_metadata,
                 "qp_objective_mean": float(np.mean(qp_objectives)) if qp_objectives else None,

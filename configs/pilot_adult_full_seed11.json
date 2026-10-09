@@ -109,7 +109,8 @@
     },
     "p03_skq_bdis_filtered": {
       "parent_source": "n_bdis_native",
-      "n_components": 256
+      "n_components": 256,
+      "budget_policy": "cap_at_candidate_pool"
     },
     "p04_skq_lrq_sq": {
       "parent_source": "n02_coretab_xgb_subset",

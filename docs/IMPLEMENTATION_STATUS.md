@@ -39,11 +39,11 @@ aggregate; chỉ sau dev freeze mới được mở test
 | AutoCoreset | boundary + driver hoàn tất | environment riêng có `iterative-stratification`, tạo artifact đúng fingerprint |
 | CRAIG feature-space | adaptation R1 | pairwise preflight không vượt RAM/ops; không claim native |
 | Gonzalez, Leverage | hoàn tất và đã smoke Adult | Gọi trực tiếp hai function upstream; adapter vá seed/index/PCA |
-| KIP-TDBench | adapter output riêng hoàn tất | JAX + neural-tangents; budget được hạ về mức source `10*N` không hoàn lại khả thi và lưu requested/realized |
-| MTT-TDBench | adapter output riêng hoàn tất | PyTorch; chạy budget cấu hình, chỉ chặn bởi preflight RAM/ops hoặc OOM/timeout thật |
+| KIP-TDBench | adapter output riêng hoàn tất | JAX + neural-tangents; vá import `jax.config` đã bị loại bỏ, không đổi phép tính KIP; budget được hạ về mức source `10*N` không hoàn lại khả thi và lưu requested/realized |
+| MTT-TDBench | benchmark-source adapter có 7 patch khai báo và kiểm tra no-op | PyTorch; sửa seed từng expert, clone snapshot ban đầu/theo epoch, bật gradient cho synthetic data/synthetic LR, giữ RNG quỹ đạo qua các iteration và bỏ reset RNG; từ chối `success` nếu output không rời dòng train gốc |
 | TAME official | adapter output riêng hoàn tất | PyTorch/GPU tùy chọn và max_rows gate |
 | P01, P02 | hoàn tất và đã smoke Adult | N01/N02 structure |
-| P03 | hoàn tất theo candidate-mask contract | BDIS phải qua gate và pool đủ budget |
+| P03 | hoàn tất theo candidate-mask contract | BDIS phải qua gate; realized=min(mục tiêu 5%, BDIS pool), lưu requested/realized size và không coi pool nhỏ hơn 5% là lỗi tài nguyên |
 | P04, P05 | code + gate hoàn tất | s1 screen trên dev với parent khai báo trước và nhãn pre-freeze; confirmatory/test bắt buộc frozen base winner |
 | D02, D04, D05 | hoàn tất | D02 cần parent; D05 cần source selection cùng run |
 
