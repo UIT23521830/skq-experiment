@@ -185,6 +185,7 @@ def run_config(
 
                     if not pending:
                         ledger.extend(learner_rows)
+                        _persist_ledger_rows(config, learner_rows)
                         _save_temporal_summary(common_run_dir, learner_rows, eval_names)
                         continue
 
@@ -205,6 +206,7 @@ def run_config(
                                 "reason": blocked.diagnostics["reason"],
                             })
                         ledger.extend(learner_rows)
+                        _persist_ledger_rows(config, learner_rows)
                         _save_temporal_summary(common_run_dir, learner_rows, eval_names)
                         continue
                     if result.status != "success":
@@ -216,6 +218,7 @@ def run_config(
                                 "reason": result.diagnostics.get("reason"),
                             })
                         ledger.extend(learner_rows)
+                        _persist_ledger_rows(config, learner_rows)
                         _save_temporal_summary(common_run_dir, learner_rows, eval_names)
                         continue
 
@@ -264,6 +267,7 @@ def run_config(
                             pending, learner_rows, "oom", None,
                         )
                         ledger.extend(learner_rows)
+                        _persist_ledger_rows(config, learner_rows)
                         _save_temporal_summary(common_run_dir, learner_rows, eval_names)
                         continue
                     except Exception as error:
@@ -271,6 +275,7 @@ def run_config(
                             pending, learner_rows, "failed", repr(error),
                         )
                         ledger.extend(learner_rows)
+                        _persist_ledger_rows(config, learner_rows)
                         _save_temporal_summary(common_run_dir, learner_rows, eval_names)
                         continue
 
@@ -322,7 +327,18 @@ def run_config(
                             atomic_json(run_dir / "evaluation_failure.json", row)
                         learner_rows.append(row)
                     ledger.extend(learner_rows)
+                    _persist_ledger_rows(config, learner_rows)
                     _save_temporal_summary(common_run_dir, learner_rows, eval_names)
+    _persist_ledger_rows(config, ledger)
+    return ledger
+
+
+def _persist_ledger_rows(
+    config: ExperimentConfig, rows: list[dict[str, Any]],
+) -> None:
+    """Checkpoint ledger sau từng learner để SIGKILL không xóa tiến độ trước đó."""
+    if not rows:
+        return
     ledger_path = config.paths.artifact_root / config.experiment_id / "run_ledger.json"
     existing = []
     if ledger_path.exists():
@@ -331,9 +347,8 @@ def run_config(
         except Exception:
             existing = []
     merged = {row.get("run_id", stable_hash(row)[:20]): row for row in existing}
-    merged.update({row.get("run_id", stable_hash(row)[:20]): row for row in ledger})
+    merged.update({row.get("run_id", stable_hash(row)[:20]): row for row in rows})
     atomic_json(ledger_path, list(merged.values()))
-    return ledger
 
 
 def _evaluation_splits(

@@ -1,10 +1,10 @@
 """Chạy panel và KIP nối tiếp trong một Kaggle Save & Run.
 
-Panel chính chạy trước với nguyên config nhưng loại KIP. Sau khi process
-đó kết thúc, script đồng bộ toàn bộ JAX/CUDA plugin về 0.4.38 và gọi
-KIP trong process Python mới. Hai pha dùng cùng config, artifact root và
-experiment_id nên runner tự gộp ledger theo run_id; protocol hash không bị
-đổi do tạo config rút gọn.
+Mỗi cặp method–learner chạy trong process riêng. Vì vậy một learner bị kernel
+kill/OOM không làm mất các method còn lại; artifact method được dùng lại sau khi
+đã kiểm tra identity và ledger được checkpoint sau từng learner. Sau panel,
+script đồng bộ JAX/CUDA plugin về 0.4.38 rồi vẫn chạy KIP, kể cả khi một cell
+panel trước đó lỗi.
 
 Script luôn aggregate và đóng gói artifact sau cùng, kể cả khi một method
 ghi trạng thái failure. Trạng thái thật nằm trong ledger và
@@ -82,6 +82,48 @@ def _run_command(args: argparse.Namespace, *extra: str) -> list[str]:
         if value is not None:
             command.extend([flag, str(value)])
     return command
+
+
+def _cell_command(
+    args: argparse.Namespace,
+    dataset_id: str,
+    method_id: str,
+    learner_id: str,
+) -> list[str]:
+    extra = [
+        "--method", method_id,
+        "--learner", learner_id,
+        "--resume",
+        "--reuse-method-artifacts",
+    ]
+    if not args.dataset:
+        extra[0:0] = ["--dataset", dataset_id]
+    return _run_command(args, *extra)
+
+
+def _run_isolated_cells(
+    args: argparse.Namespace,
+    config: ExperimentConfig,
+    *,
+    methods: Sequence[str],
+    env: dict[str, str] | None = None,
+) -> dict[str, int]:
+    datasets = [args.dataset] if args.dataset else list(config.dataset_ids)
+    return_codes: dict[str, int] = {}
+    for dataset_id in datasets:
+        for method_id in methods:
+            for learner_id in config.learner_ids:
+                key = f"{dataset_id}::{method_id}::{learner_id}"
+                return_codes[key] = _run(
+                    _cell_command(args, dataset_id, method_id, learner_id),
+                    env=env,
+                )
+    return return_codes
+
+
+def _combined_return_code(return_codes: dict[str, int]) -> int:
+    failures = [code for code in return_codes.values() if code != 0]
+    return failures[0] if failures else 0
 
 
 def _freeze() -> str:
@@ -209,15 +251,23 @@ def main() -> int:
                     "--seed", str(seed),
                 ])
 
-    # Pha 1 giữ nguyên config để protocol hash của các method và KIP giống nhau.
-    panel_rc = _run(_run_command(args, "--exclude-method", "s_kip_tdbench"))
+    # Giữ nguyên config để protocol hash của panel và KIP giống nhau. Chỉ cách
+    # điều phối thay đổi: mỗi learner là một process cô lập và có thể resume.
+    panel_methods = [
+        method_id for method_id in config.method_ids
+        if method_id != "s_kip_tdbench"
+    ]
+    panel_return_codes = _run_isolated_cells(
+        args, config, methods=panel_methods,
+    )
+    panel_rc = _combined_return_code(panel_return_codes)
 
     kip_env = dict(os.environ)
     kip_env["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
     kip_env["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"
     uninstall_rc = None
     install_rc = None
-    if panel_rc == 0 and not args.skip_kip_install:
+    if not args.skip_kip_install:
         uninstall_rc = _run(
             [sys.executable, "-m", "pip", "uninstall", "-y", *KIP_UNINSTALL],
             env=kip_env,
@@ -230,19 +280,14 @@ def main() -> int:
             env=kip_env,
         )
 
-    verification = _verify_kip_environment(kip_env) if panel_rc == 0 else {
-        "return_code": None,
-        "stdout": "",
-        "stderr": "Bỏ qua vì pha panel lỗi.",
-    }
+    verification = _verify_kip_environment(kip_env)
     (artifact_root / "environment_kip.txt").write_text(_freeze(), encoding="utf-8")
 
-    # Dù verify lỗi, vẫn gọi runner để failure KIP được ghi đúng vào ledger.
-    kip_rc = None
-    if panel_rc == 0:
-        kip_rc = _run(
-            _run_command(args, "--method", "s_kip_tdbench"), env=kip_env,
-        )
+    # Dù panel hoặc verify lỗi, vẫn gọi runner để KIP độc lập và failure được ghi.
+    kip_return_codes = _run_isolated_cells(
+        args, config, methods=["s_kip_tdbench"], env=kip_env,
+    )
+    kip_rc = _combined_return_code(kip_return_codes)
 
     aggregate_rc = _run([
         sys.executable, "-m", "skq_exp.cli", "aggregate",
@@ -260,14 +305,16 @@ def main() -> int:
         "config": str(Path(args.config).resolve()),
         "experiment_id": config.experiment_id,
         "dataset": args.dataset or list(config.dataset_ids),
-        "strategy": "panel_without_kip_then_pinned_kip_same_config_and_artifact_root",
+        "strategy": "isolated_method_learner_cells_then_pinned_kip",
         "autocoreset_return_codes": autocoreset_return_codes,
         "panel_return_code": panel_rc,
+        "panel_return_codes": panel_return_codes,
         "kip_uninstall_return_code": uninstall_rc,
         "kip_install_return_code": install_rc,
         "kip_verification": verification,
         "kip_distribution_versions": _distribution_versions(),
         "kip_run_return_code": kip_rc,
+        "kip_return_codes": kip_return_codes,
         "aggregate_return_code": aggregate_rc,
         "kip_all_learners_success": kip_success,
         "kip_resource_aware_success": kip_resource_aware_success,

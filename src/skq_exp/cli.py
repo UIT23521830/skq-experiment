@@ -66,6 +66,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     run.add_argument("--learner")
     run.add_argument(
+        "--resume", action="store_true",
+        help="Bỏ qua các run đã có manifest và metrics khớp đúng run_id.",
+    )
+    run.add_argument(
+        "--reuse-method-artifacts", action="store_true",
+        help=(
+            "Dùng lại artifact selector/generator canonical đã kiểm tra identity; "
+            "hữu ích khi cô lập từng learner trong process riêng."
+        ),
+    )
+    run.add_argument(
         "--selector-seed", type=int, action="append",
         help="Ghi đè selector seed; ví dụ --selector-seed 11. Lặp option để thêm seed.",
     )
@@ -150,6 +161,8 @@ def main(argv: list[str] | None = None) -> int:
     print(json.dumps(run_config(
         config, dataset_id=args.dataset, method_id=args.method, learner_id=args.learner,
         exclude_method_ids=tuple(getattr(args, "exclude_method", ())),
+        resume=bool(getattr(args, "resume", False)),
+        reuse_method_artifacts=bool(getattr(args, "reuse_method_artifacts", False)),
     ), indent=2, ensure_ascii=False, default=str))
     return 0
 
