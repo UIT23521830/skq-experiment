@@ -2,8 +2,7 @@
 
 Dev/test do runner chọn rõ ràng. Với CourseQuality temporal, cùng model đã fit
 được dùng lần lượt cho bốn test snapshot; không train lại bốn lần và không dùng
-test để early stopping hay tuning. Hai hàm ``evaluate_*`` cũ vẫn được giữ làm API
-tiện lợi cho trường hợp chỉ có một evaluation split.
+test để early stopping hay tuning.
 """
 
 from __future__ import annotations
@@ -171,68 +170,6 @@ def evaluate_fitted_learner(
     )
     predictions = {"y_true": y_eval, "y_pred": y_pred, "y_prob": y_prob}
     return metrics, predictions
-
-
-def evaluate_selection(
-    selection: SelectionResult,
-    X_train: np.ndarray,
-    y_train: np.ndarray,
-    X_eval: np.ndarray,
-    y_eval: np.ndarray,
-    *,
-    learner_id: str,
-    model_seed: int = 42,
-    learner_params: dict[str, Any] | None = None,
-    X_inner_val: np.ndarray | None = None,
-    y_inner_val: np.ndarray | None = None,
-    horizons: np.ndarray | None = None,
-    max_threads: int = 4,
-) -> tuple[Any, dict[str, Any], dict[str, np.ndarray]]:
-    fitted = fit_selection_learner(
-        selection,
-        X_train,
-        y_train,
-        learner_id=learner_id,
-        model_seed=model_seed,
-        learner_params=learner_params,
-        X_inner_val=X_inner_val,
-        y_inner_val=y_inner_val,
-        max_threads=max_threads,
-    )
-    metrics, predictions = evaluate_fitted_learner(
-        fitted, X_eval, y_eval, horizons=horizons,
-    )
-    return fitted.model, metrics, predictions
-
-
-def evaluate_generated(
-    generated: GeneratedDatasetResult,
-    y_full_train: np.ndarray,
-    X_eval: np.ndarray,
-    y_eval: np.ndarray,
-    *,
-    learner_id: str,
-    model_seed: int = 42,
-    learner_params: dict[str, Any] | None = None,
-    X_inner_val: np.ndarray | None = None,
-    y_inner_val: np.ndarray | None = None,
-    horizons: np.ndarray | None = None,
-    max_threads: int = 4,
-) -> tuple[Any, dict[str, Any], dict[str, np.ndarray]]:
-    fitted = fit_generated_learner(
-        generated,
-        y_full_train,
-        learner_id=learner_id,
-        model_seed=model_seed,
-        learner_params=learner_params,
-        X_inner_val=X_inner_val,
-        y_inner_val=y_inner_val,
-        max_threads=max_threads,
-    )
-    metrics, predictions = evaluate_fitted_learner(
-        fitted, X_eval, y_eval, horizons=horizons,
-    )
-    return fitted.model, metrics, predictions
 
 
 def _fit_learner(

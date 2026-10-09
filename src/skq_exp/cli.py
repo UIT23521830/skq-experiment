@@ -48,11 +48,6 @@ def main(argv: list[str] | None = None) -> int:
     prepare_external.add_argument("--input-dir", required=True)
     prepare_external.add_argument("--dataset", required=True)
     prepare_external.add_argument("--overwrite", action="store_true")
-    prepare_cq = sub.add_parser("prepare-course-quality")
-    prepare_cq.add_argument("--config", required=True)
-    prepare_cq.add_argument("--input-dir", required=True)
-    prepare_cq.add_argument("--dataset", default="course_quality_med_v1")
-    prepare_cq.add_argument("--overwrite", action="store_true")
     fetch = sub.add_parser("fetch-data")
     fetch.add_argument("--config", required=True)
     fetch.add_argument("--dataset", required=True)
@@ -124,12 +119,6 @@ def main(argv: list[str] | None = None) -> int:
         ))
         return 0
     if args.command == "prepare-external":
-        print(prepare_external_dataset(
-            args.dataset, args.input_dir, config.paths.processed_root,
-            overwrite=args.overwrite,
-        ))
-        return 0
-    if args.command == "prepare-course-quality":
         print(prepare_external_dataset(
             args.dataset, args.input_dir, config.paths.processed_root,
             overwrite=args.overwrite,

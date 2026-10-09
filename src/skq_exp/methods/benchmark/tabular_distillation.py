@@ -71,12 +71,16 @@ def _recover_indices(X: np.ndarray, selected: np.ndarray) -> np.ndarray:
     return np.asarray(recovered, dtype=np.int64)
 
 
-class GonzalezBenchmarkSelector(BaseSelector):
-    method_id = "n_gcoreset_benchmark"
+class _TabularDistillationSelector(BaseSelector):
+    """Khởi tạo chung cho hai hàm lấy từ cùng một repo benchmark."""
 
     def __init__(self, repo_root: Path, seed: int):
         super().__init__(seed)
         self.repo = Path(repo_root) / "tabular_data_distillation"
+
+
+class GonzalezBenchmarkSelector(_TabularDistillationSelector):
+    method_id = "n_gcoreset_benchmark"
 
     def select(self, X_train, y_train, budget_ratio, **kwargs):
         requested = exact_budget_size(len(y_train), budget_ratio)
@@ -103,12 +107,8 @@ class GonzalezBenchmarkSelector(BaseSelector):
         )
 
 
-class LeverageBenchmarkSelector(BaseSelector):
+class LeverageBenchmarkSelector(_TabularDistillationSelector):
     method_id = "n_leverage_benchmark"
-
-    def __init__(self, repo_root: Path, seed: int):
-        super().__init__(seed)
-        self.repo = Path(repo_root) / "tabular_data_distillation"
 
     def select(self, X_train, y_train, budget_ratio, **kwargs):
         requested = exact_budget_size(len(y_train), budget_ratio)

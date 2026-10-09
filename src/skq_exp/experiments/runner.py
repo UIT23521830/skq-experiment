@@ -37,7 +37,6 @@ from ..methods.synthetic.result import GeneratedDatasetResult
 from ..resources import ResourceGuard, ResourceLimitError, enforce_preflight, estimate_selection_cost
 from ..training import (
     evaluate_fitted_learner,
-    evaluate_selection,
     fit_generated_learner,
     fit_selection_learner,
 )
@@ -56,9 +55,12 @@ def run_smoke(config: ExperimentConfig) -> list[dict[str, Any]]:
             data["X_train"], data["y_train"], config.budget_ratio,
             row_ids=data["row_ids_train"], **kwargs,
         )
-        _model, metrics, _predictions = evaluate_selection(
-            selection, data["X_train"], data["y_train"], data["X_dev"], data["y_dev"],
+        fitted = fit_selection_learner(
+            selection, data["X_train"], data["y_train"],
             learner_id="lr", model_seed=config.model_seed,
+        )
+        metrics, _predictions = evaluate_fitted_learner(
+            fitted, data["X_dev"], data["y_dev"],
         )
         rows.append({
             "method_id": method_id, "status": selection.status,

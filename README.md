@@ -269,9 +269,10 @@ CourseQuality có và đánh giá đủ bốn test.
 
 Các dataset ngoài dùng chung lệnh `prepare-external`. Mỗi dataset có một module
 trong `src/skq_exp/data/adapters/`, kế thừa contract base hoặc khung CSV pre-split
-và được đăng ký tường minh trong adapter registry. Alias
-`prepare-course-quality` vẫn được giữ để notebook cũ tiếp tục chạy. Hướng dẫn và
-skeleton nằm trong [`docs/DATASET_ADAPTERS.md`](docs/DATASET_ADAPTERS.md).
+và được đăng ký tường minh trong adapter registry. Mọi dataset ngoài chỉ dùng
+`prepare-external`; không duy trì một lệnh hoặc module riêng lặp lại cho từng
+dataset. Hướng dẫn và skeleton nằm trong
+[`docs/DATASET_ADAPTERS.md`](docs/DATASET_ADAPTERS.md).
 
 ## 8. Metrics
 

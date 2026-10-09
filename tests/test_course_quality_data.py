@@ -6,7 +6,6 @@ import numpy as np
 import pandas as pd
 
 from skq_exp.data.adapters import get_dataset_adapter, prepare_external_dataset
-from skq_exp.data.course_quality import prepare_course_quality_snapshot
 from skq_exp.data.prepare import load_processed
 
 
@@ -61,9 +60,6 @@ def test_prepare_course_quality_preserves_four_snapshots(tmp_path):
     assert np.array_equal(data["X_test"], data["X_test_phase4"])
     assert set(np.unique(data["y_train"])) == {0, 1, 2}
     assert data["X_train"][2, 0] == 4.0
-    assert prepare_course_quality_snapshot(
-        raw, processed, validate_expected_rows=False,
-    ) == manifest
     schema = json.loads((manifest.parent / "schema.json").read_text(encoding="utf-8"))
     assert "label" not in schema["processed_columns"]
     assert "user_id_enc" not in schema["processed_columns"]
