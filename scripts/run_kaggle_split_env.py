@@ -197,7 +197,7 @@ def main() -> int:
         install_rc = _run(
             [
                 sys.executable, "-m", "pip", "install", "--no-cache-dir",
-                "--upgrade", "--force-reinstall", *KIP_DISTRIBUTIONS,
+                *KIP_DISTRIBUTIONS,
             ],
             env=kip_env,
         )
