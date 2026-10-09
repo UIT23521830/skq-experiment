@@ -235,6 +235,30 @@ Repo ngoài không phải method nào cũng có điểm kiểm tra giữa vòng;
 preflight là lớp bảo vệ chính. Requested size và realized size đều được lưu để
 không đánh đồng giới hạn khả thi của source với lỗi tài nguyên.
 
+## 7a. Chạy thử CourseQuality MED
+
+Snapshot Kaggle `hoangzyyng/cq-med` đã có train, validation và bốn temporal test
+snapshot nên không được đưa qua splitter của các dataset UCI. Lệnh riêng sau giữ
+`val_med.csv` làm dev, khóa test ở stage screening và lưu đủ bốn phase:
+
+```bash
+skq prepare-course-quality \
+  --config configs/pilot_course_quality_med_quick_seed11.json \
+  --input-dir /kaggle/input/datasets/hoangzyyng/cq-med
+skq run --config configs/pilot_course_quality_med_quick_seed11.json
+```
+
+Quick config chỉ chạy FullTrain-LR và StratifiedRandom-LR để kiểm tra schema trên
+toàn bộ 2.637.700 dòng train. Config
+`pilot_course_quality_med_seed11.json` giữ đủ 22 method × 5 learner, nhưng các
+method bậc hai/deep có thể bị resource gate trên tập lớn này; đó là trạng thái
+thực, không được thay bằng fallback.
+
+Audit snapshot hiện có overlap user-course giữa train/dev/test, nên cả hai config
+đều mang `evidence_role=integration_debug_split_overlap`. Metric dùng để kiểm tra
+pipeline, chưa được đưa vào bảng confirmatory. Bốn test snapshot được lưu dưới
+`X_test_phase1.npy` … `X_test_phase4.npy`; runner s1 không đọc chúng.
+
 ## 8. Metrics
 
 Mỗi prediction tạo hơn 25 metric tổng thể: accuracy, balanced accuracy,

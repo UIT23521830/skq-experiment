@@ -53,6 +53,12 @@ DATASET_SPECS = {
             "https://www.openml.org/d/41169",
             65_196, 27, 100, "stratified_70_15_15_all_classes",
         ),
+        DatasetSpec(
+            "course_quality_med_v1", "CourseQuality MED", "User-provided Kaggle snapshot",
+            "https://www.kaggle.com/datasets/hoangzyyng/cq-med",
+            3_297_128, 59, 3,
+            "provided_train_val_four_temporal_tests_test_locked",
+        ),
     ]
 }
 
@@ -62,4 +68,3 @@ def get_dataset_spec(dataset_id: str) -> DatasetSpec:
         return DATASET_SPECS[dataset_id]
     except KeyError as error:
         raise KeyError(f"Dataset chưa đăng ký: {dataset_id}") from error
-

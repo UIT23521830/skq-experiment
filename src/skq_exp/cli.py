@@ -16,7 +16,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from .config import ExperimentConfig
-from .data import fetch_dataset, prepare_dataset
+from .data import fetch_dataset, prepare_course_quality_snapshot, prepare_dataset
 from .experiments import run_config, run_smoke
 from .methods import allowed_learners_for, get_method_spec
 from .reports import aggregate_results
@@ -43,6 +43,11 @@ def main(argv: list[str] | None = None) -> int:
     prepare.add_argument("--config", required=True)
     prepare.add_argument("--dataset", required=True)
     prepare.add_argument("--overwrite", action="store_true")
+    prepare_cq = sub.add_parser("prepare-course-quality")
+    prepare_cq.add_argument("--config", required=True)
+    prepare_cq.add_argument("--input-dir", required=True)
+    prepare_cq.add_argument("--dataset", default="course_quality_med_v1")
+    prepare_cq.add_argument("--overwrite", action="store_true")
     fetch = sub.add_parser("fetch-data")
     fetch.add_argument("--config", required=True)
     fetch.add_argument("--dataset", required=True)
@@ -111,6 +116,12 @@ def main(argv: list[str] | None = None) -> int:
         print(prepare_dataset(
             args.dataset, config.paths.raw_root, config.paths.processed_root,
             overwrite=args.overwrite,
+        ))
+        return 0
+    if args.command == "prepare-course-quality":
+        print(prepare_course_quality_snapshot(
+            args.input_dir, config.paths.processed_root,
+            dataset_id=args.dataset, overwrite=args.overwrite,
         ))
         return 0
     if args.command == "fetch-data":
