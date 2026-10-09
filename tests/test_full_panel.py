@@ -9,7 +9,8 @@ from pathlib import Path
 import numpy as np
 
 from skq_exp.config import ExperimentConfig
-from skq_exp.methods import METHOD_SPECS, build_selector
+from skq_exp.cli import _plan
+from skq_exp.methods import METHOD_SPECS, allowed_learners_for, build_selector
 from skq_exp.methods.proposed.query_losses import make_oof_query_losses
 from skq_exp.methods.proposed.simplex_qp import solve_simplex_mean_match
 
@@ -32,8 +33,6 @@ def test_adult_full_config_has_20_rows_and_five_learners():
         METHOD_SPECS[item].output_kind
         for item in ("s_kip_tdbench", "s_mtt_tdbench", "s_tame_official")
     } == {"synthetic"}
-    alias = ExperimentConfig.from_json(ROOT / "configs" / "pilot_adult_seed11.json")
-    assert alias.method_ids == config.method_ids
     assert config.test_locked is True
     assert config.method_options["p04_skq_lrq_sq"]["parent_source"] == "n02_coretab_xgb_subset"
     assert config.method_options["p05_skq_lrq_mq"]["parent_source"] == "n02_coretab_xgb_subset"
@@ -41,6 +40,24 @@ def test_adult_full_config_has_20_rows_and_five_learners():
     # đơn vị rõ ràng, không bởi trần số dòng tùy ý.
     assert "max_rows" not in config.method_options["s_kip_tdbench"]
     assert "max_rows" not in config.method_options["s_mtt_tdbench"]
+
+
+def test_adult_full_v2_adds_deep_methods_and_plans_every_learner():
+    config = ExperimentConfig.from_json(
+        ROOT / "configs" / "pilot_adult_full_seed11_v2.json"
+    )
+    assert len(config.method_ids) == 22
+    assert {"s_gm_tdbench", "s_datm_tdbench"} <= set(config.method_ids)
+    assert config.protocol_id == "static_tabular_full_pilot_v2"
+    assert allowed_learners_for(
+        "c02_stratified_random", config.method_options["c02_stratified_random"]
+    ) == ("lr", "rf", "xgb", "cat", "mlp")
+    plan = _plan(config)
+    assert plan["cells_total_per_dataset_seed"] == 110
+    assert plan["cells_planned"] == 110
+    assert plan["cells_na_contract"] == 0
+    alias = ExperimentConfig.from_json(ROOT / "configs" / "pilot_adult_seed11.json")
+    assert alias.method_ids == config.method_ids
 
 
 def test_benchmark_selectors_return_exact_unique_indices(tmp_path):

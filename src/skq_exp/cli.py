@@ -18,7 +18,7 @@ from pathlib import Path
 from .config import ExperimentConfig
 from .data import fetch_dataset, prepare_dataset
 from .experiments import run_config, run_smoke
-from .methods import get_method_spec
+from .methods import allowed_learners_for, get_method_spec
 from .reports import aggregate_results
 
 
@@ -143,9 +143,12 @@ def _plan(config: ExperimentConfig, *, include_cells: bool = False) -> dict:
     cells = []
     for method_id in config.method_ids:
         spec = get_method_spec(method_id)
+        allowed = allowed_learners_for(
+            method_id, (config.method_options or {}).get(method_id),
+        )
         for learner_id in config.learner_ids:
             contract = "planned"
-            if spec.allowed_learners is not None and learner_id not in spec.allowed_learners:
+            if allowed is not None and learner_id not in allowed:
                 contract = "na_contract"
             cells.append({
                 "method_id": method_id,

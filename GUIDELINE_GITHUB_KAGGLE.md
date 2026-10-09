@@ -98,6 +98,7 @@ Trong config chạy, dùng:
 
 ```json
 {
+  "extends": "pilot_adult_full_seed11_v2.json",
   "paths": {
     "raw_root": "/kaggle/input/skq-public-data",
     "processed_root": "/kaggle/working/skq_data/processed",
@@ -118,8 +119,8 @@ Trong config chạy, dùng:
 !skq smoke --config configs/s0_smoke.json
 
 # 2. Tải/chuẩn bị Adult và kiểm tra manifest
-!skq fetch-data --dataset adult_uci2_v1 --config configs/pilot_adult_full_seed11.json
-!skq prepare --dataset adult_uci2_v1 --config configs/pilot_adult_full_seed11.json
+!skq fetch-data --dataset adult_uci2_v1 --config configs/pilot_adult_full_seed11_v2.json
+!skq prepare --dataset adult_uci2_v1 --config configs/pilot_adult_full_seed11_v2.json
 
 # 3. Quick check rồi candidate matrix; LRQ được screen trên dev với parent khai báo trước
 !skq run --config configs/pilot_adult_quick_seed11.json --selector-seed 11
@@ -153,14 +154,14 @@ Trong lần chạy đầu, luôn thêm `--selector-seed 11`. Sau khi artifact v�
 được kiểm tra, có thể chạy nhiều seed bằng cách lặp option:
 
 ```bash
-!skq run --config configs/pilot_adult_full_seed11.json --dataset adult_uci2_v1 \
+!skq run --config configs/pilot_adult_full_seed11_v2.json --dataset adult_uci2_v1 \
   --selector-seed 11 --selector-seed 29 --selector-seed 47
 ```
 
 Trên máy có RAM hạn chế, đặt guard ngay trong lệnh:
 
 ```bash
-!skq run --config configs/pilot_adult_full_seed11.json --dataset adult_uci2_v1 \
+!skq run --config configs/pilot_adult_full_seed11_v2.json --dataset adult_uci2_v1 \
   --selector-seed 11 --max-ram-gb 12 --timeout-seconds 7200 \
   --max-estimated-operations 50000000000
 ```
@@ -184,7 +185,7 @@ output của version trước làm input rồi giải nén sang `/kaggle/working
 Các repo tác giả được khóa commit trong `external/official_repos.lock.json`.
 CoreTab và BDIS có adapter native trực tiếp; CRAIG feature-space là adaptation R1.
 AutoCoreset dùng driver environment
-riêng; KIP/MTT giữ dependency nặng của TDBench. Output đều mang commit/provenance.
+riêng; KIP/MTT/GM/DATM giữ dependency nặng của TDBench. Output đều mang commit/provenance.
 
 Quy trình:
 
@@ -194,7 +195,7 @@ Quy trình:
 4. Kiểm tra row identity và output type.
 5. AutoCoreset chạy `python scripts/run_autocoreset_native.py --config ... --dataset ... --seed 11`; chỉ artifact qua gate mới được runner nhập.
 
-KIP cần JAX và neural-tangents, MTT cần PyTorch. KIP/MTT không bị chặn bởi trần
+KIP cần JAX và neural-tangents; MTT/GM/DATM cần PyTorch. Các method này không bị chặn bởi trần
 500 dòng nữa: budget 5% là biến thực nghiệm, còn preflight chỉ chặn khi ước lượng
 RAM hoặc số phép tính vượt policy. OOM/timeout runtime được ghi đúng loại tài
 nguyên. Với Adult, KIP-TDBench yêu cầu target batch `10*N` mỗi lớp không hoàn lại,

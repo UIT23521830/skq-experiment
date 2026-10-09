@@ -28,7 +28,7 @@ from ..artifacts import (
 from ..config import ExperimentConfig
 from ..data import load_processed
 from ..data.toy import make_toy_data
-from ..methods import build_generator, build_selector, get_method_spec
+from ..methods import allowed_learners_for, build_generator, build_selector, get_method_spec
 from ..methods.diagnostics import equal_group_weights
 from ..methods.proposed.allocation import make_group_ids
 from ..methods.proposed.query_losses import make_oof_query_losses
@@ -163,7 +163,10 @@ def run_config(
                         if completed is not None:
                             ledger.append(completed)
                             continue
-                    allowed = get_method_spec(current_method).allowed_learners
+                    allowed = allowed_learners_for(
+                        current_method,
+                        (config.method_options or {}).get(current_method),
+                    )
                     if allowed is not None and current_learner not in allowed:
                         blocked = _failure_like(result, current_method, "na_contract", f"Protocol chỉ cho {current_method} chạy với {allowed}")
                         _save_failure_manifest(run_dir, manifest, blocked)

@@ -40,7 +40,10 @@ METHOD_SPECS = {
         MethodSpec(
             "c02_stratified_random", "Stratified Random", "control", "implemented",
             allowed_learners=("xgb",),
-            note="Control cổ điển: subset thật, exact budget, confirmatory-only theo protocol.",
+            note=(
+                "Control cổ điển: subset thật, exact budget. Contract cũ chỉ chạy XGBoost; "
+                "config full-v2 ghi đè rõ ràng để đánh giá đủ năm learner."
+            ),
         ),
         MethodSpec(
             "n01_coretab_dt_subset", "CoreTab-DT Official", "native", "implemented",
@@ -86,6 +89,22 @@ METHOD_SPECS = {
             note=(
                 "Benchmark-source adapter có 7 patch khai báo; khôi phục gradient, "
                 "snapshot và RNG cho trajectory matching; không phải TDBench nguyên trạng."
+            ),
+        ),
+        MethodSpec(
+            "s_gm_tdbench", "Gradient Matching-TDBench", "synthetic", "implemented",
+            output_kind="synthetic",
+            note=(
+                "Benchmark-source adapter cho Dataset Condensation with Gradient Matching "
+                "(ICLR 2021); vá requires_grad bị thiếu trong source TDBench và khai báo patch."
+            ),
+        ),
+        MethodSpec(
+            "s_datm_tdbench", "DATM-TDBench", "synthetic", "implemented",
+            output_kind="synthetic",
+            note=(
+                "Benchmark-source adapter cho Difficulty-Aligned Trajectory Matching "
+                "(ICLR 2024); dùng source TDBench với các patch gradient/snapshot/RNG khai báo."
             ),
         ),
         MethodSpec(
@@ -147,6 +166,21 @@ def get_method_spec(method_id: str) -> MethodSpec:
         return METHOD_SPECS[method_id]
     except KeyError as error:
         raise KeyError(f"Method chưa đăng ký: {method_id}") from error
+
+
+def allowed_learners_for(
+    method_id: str, options: dict[str, Any] | None = None,
+) -> tuple[str, ...] | None:
+    """Trả contract learner, cho phép protocol mới ghi đè contract legacy.
+
+    Override nằm trong config và vì vậy đi vào protocol hash/artifact. Cách này
+    giữ nguyên hành vi của config v1 nhưng cho phép full-v2 mở control ngẫu nhiên
+    trên đủ learner mà không sửa thuật toán chọn mẫu.
+    """
+    configured = dict(options or {}).get("allowed_learners")
+    if configured is not None:
+        return tuple(str(item) for item in configured)
+    return get_method_spec(method_id).allowed_learners
 
 
 def build_selector(method_id: str, seed: int, *, n_components: int = 256, external_root: str | Path | None = None, options: dict[str, Any] | None = None):

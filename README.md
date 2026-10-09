@@ -27,17 +27,19 @@ trên **dev**; kết quả đó chỉ phục vụ kiểm tra code và screening.
 
 ## 2. Panel đã được code
 
-Config [`pilot_adult_full_seed11.json`](configs/pilot_adult_full_seed11.json) có
-20 dòng, tương ứng 100 ô method × learner ở một seed. Ô không hợp contract vẫn
-được ghi `NA_CONTRACT`; thiếu dependency, vượt RAM hoặc vượt time gate vẫn được
-ghi `BLOCKED/PREDICTED_OOM/PREDICTED_TIMEOUT`, không bị xóa khỏi mẫu số.
-Tên cũ `pilot_adult_seed11.json` hiện là alias của full config, nên không còn
-trường hợp một file mang tên pilot/full nhưng chỉ âm thầm chạy hai method.
+Config hiện hành
+[`pilot_adult_full_seed11_v2.json`](configs/pilot_adult_full_seed11_v2.json) có
+22 dòng, tương ứng 110 ô method × learner ở một seed và lên kế hoạch đủ 110 ô.
+Control Stratified Random được mở cho đủ năm learner bằng override nằm trong
+config/protocol hash. Config v1 được giữ lại để đọc đúng artifact cũ có bốn ô
+`NA_CONTRACT`; thiếu dependency, vượt RAM hoặc vượt time gate vẫn được ghi
+`BLOCKED/PREDICTED_OOM/PREDICTED_TIMEOUT`, không bị xóa khỏi mẫu số. Tên ngắn
+`pilot_adult_seed11.json` là alias của full-v2.
 
 | Nhóm | ID | Implementation và cách hiểu |
 |---|---|---|
 | Reference | `c00_full_train` | Train toàn bộ; không phải selector |
-| Control | `c02_stratified_random` | Exact 5%, chỉ XGBoost confirmatory theo protocol |
+| Control | `c02_stratified_random` | Exact 5%; full-v2 chạy đủ LR/RF/XGB/CAT/MLP, confirmatory vẫn có thể khóa riêng |
 | Native | `n01_coretab_dt_subset` | Gọi trực tiếp CoreTab-DT commit khóa; giữ native size |
 | Native | `n02_coretab_xgb_subset` | Gọi trực tiếp CoreTab-XGB commit khóa; giữ native size |
 | Native | `n_bdis_native` | Gọi BDIS upstream; bắt buộc `faiss`, không sklearn fallback |
@@ -47,6 +49,8 @@ trường hợp một file mang tên pilot/full nhưng chỉ âm thầm chạy h
 | Official-source adapter | `n_leverage_benchmark` | Gọi trực tiếp `distill_coreset_leverage_scores`; adapter inject import PCA/seed |
 | Synthetic | `s_kip_tdbench` | Gọi KIP trong TDBench; lưu `generated_train.npz` |
 | Synthetic | `s_mtt_tdbench` | Gọi trajectory matching trong TDBench |
+| Synthetic | `s_gm_tdbench` | Gradient Matching (ICLR 2021) qua TDBench; patch gradient được khai báo |
+| Synthetic | `s_datm_tdbench` | Difficulty-Aligned Trajectory Matching (ICLR 2024) qua TDBench; patch được khai báo |
 | Synthetic | `s_tame_official` | Gọi `tame_synthesize` từ TAME; GPU/`max_rows` gate rõ ràng |
 | Proposed | `p01_skq_coretab_dt` | SKQ dùng structure do N01 xuất |
 | Proposed | `p02_skq_coretab_xgb` | SKQ dùng structure do N02 xuất |
@@ -56,6 +60,16 @@ trường hợp một file mang tên pilot/full nhưng chỉ âm thầm chạy h
 | Ablation | `d02_parent_structured_random` | Giữ structure/QP, thay herding bằng random trong nhóm |
 | Ablation | `d04_global_rff_quadrature` | Bỏ parent structure, vẫn giữ class/RFF/herding/QP |
 | Ablation | `d05_equal_group_weight` | Giữ index của P05, thay QP bằng trọng số đều trong nhóm |
+
+GM và DATM là baseline deep chính thống về ý tưởng/paper nhưng lượt `full-v2`
+dùng profile `pilot_resource_bounded`, không tự nhận là full-paper reproduction.
+Artifact lưu toàn bộ tham số chạy và danh sách source patch. Cấu hình tham chiếu
+đầy đủ của TDBench lớn hơn đáng kể và chỉ nên chạy ở stage scale riêng.
+
+Không thêm baseline LLM vào ma trận số hiện tại. GReaT/LLM cần DataFrame thô với
+tên cột, kiểu categorical và tokenizer/model checkpoint; runner hiện nhận
+`X_train.npy` đã mã hóa. Ép LLM học các cột số ẩn danh sẽ sai cơ chế paper và phụ
+thuộc tải model ngoài khi Kaggle Internet có thể bị tắt.
 
 `p00_structured_kquad` là engine dùng chung, không phải dòng kết quả. Trong
 `s1_screen`, P04/P05 được chạy trên **dev** với parent N02 đã khai báo trước và
@@ -76,8 +90,8 @@ manifest hoặc parent không khớp winner đã freeze.
   mass-preserving weights và invariant tests.
 
 AutoCoreset cần boundary riêng vì upstream phụ thuộc API cũ. BDIS cần Faiss. KIP
-cần JAX/neural-tangents; MTT cần PyTorch. Nếu môi trường không đạt, ledger nói rõ
-lý do và tuyệt đối không chạy một thuật toán khác dưới cùng tên.
+cần JAX/neural-tangents; MTT/GM/DATM cần PyTorch. Nếu môi trường không đạt,
+ledger nói rõ lý do và tuyệt đối không chạy một thuật toán khác dưới cùng tên.
 
 CoreTab upstream ở commit khóa chỉ có native subset contract cho nhãn nhị phân.
 Với dataset đa lớp, N01/N02 được ghi `NA_CONTRACT`; adapter chỉ xuất leaf structure
@@ -102,7 +116,7 @@ skq_experiment/
 │   ├── methods/
 │   │   ├── native/                  # boundary repo tác giả
 │   │   ├── benchmark/               # reproduction benchmark có khai báo
-│   │   ├── synthetic/               # contract KIP/MTT sinh X/y
+│   │   ├── synthetic/               # contract KIP/MTT/GM/DATM/TAME sinh X/y
 │   │   └── proposed/                # RFF, allocation, herding, QP, query loss
 │   ├── training/                    # 5 learner, weight contract và metrics
 │   ├── experiments/                 # DAG, gate, runner và failure ledger
@@ -137,8 +151,8 @@ các checkout này lên GitHub.
 Tải và chuẩn bị dữ liệu:
 
 ```powershell
-skq fetch-data --config configs\pilot_adult_full_seed11.json --dataset adult_uci2_v1
-skq prepare --config configs\pilot_adult_full_seed11.json --dataset adult_uci2_v1
+skq fetch-data --config configs\pilot_adult_full_seed11_v2.json --dataset adult_uci2_v1
+skq prepare --config configs\pilot_adult_full_seed11_v2.json --dataset adult_uci2_v1
 ```
 
 Kiểm tra nhanh trước (FullTrain-LR + D04-LR):
@@ -151,23 +165,22 @@ skq run --config configs\pilot_adult_quick_seed11.json `
 Chạy toàn bộ candidate matrix trên Adult, seed 11:
 
 ```powershell
-skq plan --config configs\pilot_adult_full_seed11.json
-skq run --config configs\pilot_adult_full_seed11.json `
+skq plan --config configs\pilot_adult_full_seed11_v2.json
+skq run --config configs\pilot_adult_full_seed11_v2.json `
   --selector-seed 11 --model-seed 42 `
   --max-ram-gb 8 --timeout-seconds 3600 --max-threads 4 `
   --max-estimated-operations 30000000000
 ```
 
-Đây mới là lệnh **full**. Nó đi qua cả 20 method và 5 learner; không phải lệnh
-2-method quick check. `skq plan` phải báo 19 phương pháp nén/sinh, 100 ô tổng,
-96 ô được lên kế hoạch chạy;
-4 ô C02–non-XGB là `NA_CONTRACT`. P04/P05 chạy ở dev dưới nhãn pre-freeze; chỉ
+Đây mới là lệnh **full-v2**. Nó đi qua cả 22 method và 5 learner; không phải lệnh
+2-method quick check. `skq plan` phải báo 21 phương pháp nén/sinh, 110 ô tổng và
+110 ô được lên kế hoạch chạy. P04/P05 chạy ở dev dưới nhãn pre-freeze; chỉ
 confirmatory/test mới giữ `GATE_LOCKED` cho tới khi base winner đã freeze.
 Dependency bị thiếu không được coi là kết quả cuối. Chạy riêng
 một ô để debug:
 
 ```powershell
-skq run --config configs\pilot_adult_full_seed11.json `
+skq run --config configs\pilot_adult_full_seed11_v2.json `
   --method p02_skq_coretab_xgb --learner lr --selector-seed 11
 ```
 
@@ -178,7 +191,7 @@ structure artifact cũng có thể được nạp lại từ ổ đĩa.
 Sau khi seed 11 ổn, thêm seed mà không sửa code:
 
 ```powershell
-skq run --config configs\pilot_adult_full_seed11.json `
+skq run --config configs\pilot_adult_full_seed11_v2.json `
   --selector-seed 11 --selector-seed 29 --selector-seed 47
 ```
 
@@ -212,7 +225,7 @@ Guard bảo vệ máy gồm:
 - hard resource check giữa các batch/vòng của SKQ và Gonzalez;
 - CRAIG tính cả ma trận pairwise O(n²) trong dự báo RAM;
 - KIP tính cả kernel target-support, gradient và optimizer trong dự báo RAM;
-- KIP/MTT không có trần budget tùy ý; OOM/timeout thật được ghi tách biệt;
+- KIP/MTT/GM/DATM không có trần budget tùy ý; OOM/timeout thật được ghi tách biệt;
 - Trên Kaggle, `scripts/run_kaggle_split_env.py` chạy panel trước, sau đó
   pin đồng bộ JAX/CUDA 0.4.38 và chạy riêng KIP trong process mới; hai
   pha vẫn dùng cùng protocol hash và được đóng gói chung;

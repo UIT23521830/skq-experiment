@@ -5,7 +5,18 @@ kết quả luôn giống nhau. Repo tác giả được gọi qua boundary riê
 native vào các implementation đề xuất.
 """
 
-from .registry import METHOD_SPECS, build_generator, build_selector, get_method_spec
+from .registry import (
+    METHOD_SPECS,
+    allowed_learners_for,
+    build_generator,
+    build_selector,
+    get_method_spec,
+)
 
-__all__ = ["METHOD_SPECS", "build_generator", "build_selector", "get_method_spec"]
-
+__all__ = [
+    "METHOD_SPECS",
+    "allowed_learners_for",
+    "build_generator",
+    "build_selector",
+    "get_method_spec",
+]

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "skq-experiment"
-version = "0.2.0"
+version = "0.3.0"
 description = "Khung thực nghiệm tái lập cho Structured Kernel Quadrature trên dữ liệu bảng."
 readme = "README.md"
 requires-python = ">=3.10,<3.14"

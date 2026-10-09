@@ -1,12 +1,13 @@
-"""Adapter KIP và MTT từ repo benchmark TDBench đã khóa commit.
+"""Adapter deep dataset-distillation từ repo TDBench đã khóa commit.
 
 Trạng thái: benchmark-source adapter, không tuyên bố là native source của paper
-KIP/MTT hay tái lập toàn bộ thiết lập paper. Adapter gọi hàm TDBench ở commit đã
+KIP/MTT/GM/DATM hay tái lập toàn bộ thiết lập paper. Adapter gọi hàm TDBench ở commit đã
 khóa, đổi budget tổng sang số mẫu mỗi lớp theo contract của repo và áp dụng các
 bản vá hẹp, có khai báo trong diagnostics: import JAX hiện hành cho KIP;
-MTT có bảy patch được liệt kê ngay tại ``_patch_tdbench_source``. KIP sinh dữ
-liệu bằng kernel inducing points; MTT sinh dữ liệu bằng cách khớp quỹ đạo
-huấn luyện. Loại đầu ra của cả hai là bảng train tổng hợp, không phải
+MTT và DATM có bảy patch được liệt kê ngay tại ``_patch_tdbench_source``;
+Gradient Matching (GM) có một patch bật gradient cho synthetic features. KIP
+sinh dữ liệu bằng kernel inducing points; GM khớp gradient; MTT/DATM khớp quỹ
+đạo huấn luyện. Loại đầu ra của cả bốn là bảng train tổng hợp, không phải
 subset dòng thật.
 
 Vì sao MTT được ghi là adapter thay vì TDBench nguyên trạng:
@@ -20,7 +21,7 @@ khôi phục động lực huấn luyện mà source TDBench đã khóa không t
 source thực thi; vì vậy fidelity bắt buộc là ``benchmark-source adapter with
 declared patches``, không được ghi là native hay upstream-unmodified.
 
-KIP/MTT được đưa vào bài làm baseline dataset distillation mạnh để so sánh utility
+Các method này được đưa vào bài làm baseline dataset distillation mạnh để so sánh utility
 của một tập train rất nhỏ với SKQ. Adapter không đặt trần số dòng tùy ý: budget là
 biến thực nghiệm và số dòng thực sinh luôn được lưu. Chỉ preflight RAM/phép tính
 hoặc lỗi tài nguyên thật mới tạo trạng thái OOM/timeout; tuyệt đối không dùng
@@ -83,29 +84,81 @@ class TDBenchGenerator:
                 resource_guard.check("trước khi gọi TDBench")
             if self.method_id == "s_kip_tdbench":
                 module = _load_distill_module(repo, "kip")
+                configured_parameters = {
+                    "n_epochs": int(self.options.get("n_epochs", 100)),
+                    "mlp_dim": int(self.options.get("mlp_dim", 128)),
+                }
                 X_syn, y_syn = module.kip(
                     np.asarray(X_train), np.asarray(y_train), per_label,
-                    n_epochs=int(self.options.get("n_epochs", 100)),
-                    mlp_dim=int(self.options.get("mlp_dim", 128)),
+                    **configured_parameters,
                     random_state=self.seed,
                 )
             elif self.method_id == "s_mtt_tdbench":
                 module = _load_distill_module(repo, "trajectory_matching")
+                configured_parameters = {
+                    "n_epochs": int(self.options.get("n_epochs", 20)),
+                    "n_experts": int(self.options.get("n_experts", 2)),
+                    "expert_epochs": int(self.options.get("expert_epochs", 2)),
+                    "syn_steps": int(self.options.get("syn_steps", 5)),
+                    "max_start_epoch": int(self.options.get("max_start_epoch", 10)),
+                    "mlp_dim": int(self.options.get("mlp_dim", 64)),
+                    "n_iter": int(self.options.get("n_iter", 100)),
+                    "lr_teacher": float(self.options.get("lr_teacher", 0.01)),
+                    "lr_data": float(self.options.get("lr_data", 0.1)),
+                    "lr_lr": float(self.options.get("lr_lr", 1e-5)),
+                    "mom_lr": float(self.options.get("mom_lr", 0.5)),
+                    "mom_data": float(self.options.get("mom_data", 0.5)),
+                    "n_hidden_layers": int(self.options.get("n_hidden_layers", 2)),
+                }
+                _validate_trajectory_options(configured_parameters)
                 X_syn, y_syn = module.trajectory_matching(
                     np.asarray(X_train), np.asarray(y_train), per_label,
-                    n_epochs=int(self.options.get("n_epochs", 20)),
-                    n_experts=int(self.options.get("n_experts", 2)),
-                    expert_epochs=int(self.options.get("expert_epochs", 2)),
-                    syn_steps=int(self.options.get("syn_steps", 5)),
-                    max_start_epoch=int(self.options.get("max_start_epoch", 10)),
-                    mlp_dim=int(self.options.get("mlp_dim", 64)),
-                    n_iter=int(self.options.get("n_iter", 100)),
-                    lr_teacher=float(self.options.get("lr_teacher", 0.01)),
-                    lr_data=float(self.options.get("lr_data", 0.1)),
-                    lr_lr=float(self.options.get("lr_lr", 1e-5)),
-                    mom_lr=float(self.options.get("mom_lr", 0.5)),
-                    mom_data=float(self.options.get("mom_data", 0.5)),
-                    n_hidden_layers=int(self.options.get("n_hidden_layers", 2)),
+                    **configured_parameters,
+                    random_state=self.seed,
+                )
+            elif self.method_id == "s_gm_tdbench":
+                module = _load_distill_module(repo, "gradient_matching")
+                configured_parameters = {
+                    "n_epochs": int(self.options.get("n_epochs", 100)),
+                    "mlp_dim": int(self.options.get("mlp_dim", 128)),
+                    "lr_mlp": float(self.options.get("lr_mlp", 0.01)),
+                    "lr_data": float(self.options.get("lr_data", 0.1)),
+                    "mom_data": float(self.options.get("mom_data", 0.5)),
+                    "n_hidden_layers": int(self.options.get("n_hidden_layers", 2)),
+                }
+                if configured_parameters["n_epochs"] < 1:
+                    raise ValueError("Gradient Matching yêu cầu n_epochs >= 1")
+                X_syn, y_syn = module.gradient_matching(
+                    np.asarray(X_train), np.asarray(y_train), per_label,
+                    **configured_parameters,
+                    random_state=self.seed,
+                )
+            elif self.method_id == "s_datm_tdbench":
+                module = _load_distill_module(repo, "datm")
+                configured_parameters = {
+                    "n_epochs": int(self.options.get("n_epochs", 20)),
+                    "n_experts": int(self.options.get("n_experts", 2)),
+                    "expert_epochs": int(self.options.get("expert_epochs", 2)),
+                    "syn_steps": int(self.options.get("syn_steps", 5)),
+                    "mlp_dim": int(self.options.get("mlp_dim", 64)),
+                    "n_iter": int(self.options.get("n_iter", 100)),
+                    "lr_teacher": float(self.options.get("lr_teacher", 0.01)),
+                    "lr_data": float(self.options.get("lr_data", 0.1)),
+                    "lr_lr": float(self.options.get("lr_lr", 1e-5)),
+                    "mom_lr": float(self.options.get("mom_lr", 0.5)),
+                    "mom_data": float(self.options.get("mom_data", 0.5)),
+                    "min_start_epoch": int(self.options.get("min_start_epoch", 0)),
+                    "current_max_start_epoch": int(
+                        self.options.get("current_max_start_epoch", 5)
+                    ),
+                    "max_start_epoch": int(self.options.get("max_start_epoch", 10)),
+                    "expansion_end_epoch": int(self.options.get("expansion_end_epoch", 50)),
+                    "n_hidden_layers": int(self.options.get("n_hidden_layers", 2)),
+                }
+                _validate_trajectory_options(configured_parameters, datm=True)
+                X_syn, y_syn = module.datm(
+                    np.asarray(X_train), np.asarray(y_train), per_label,
+                    **configured_parameters,
                     random_state=self.seed,
                 )
             else:
@@ -150,14 +203,14 @@ class TDBenchGenerator:
                 self.method_id, "failed", requested,
                 "TDBench output vi phạm shape/finite/label coverage contract",
             )
-        if self.method_id == "s_mtt_tdbench":
+        if self.method_id in {"s_mtt_tdbench", "s_gm_tdbench", "s_datm_tdbench"}:
             exact_pairs = _count_exact_training_pairs(X_syn, y_syn, X_train, y_train)
             if exact_pairs == len(X_syn):
                 return GeneratedDatasetResult.failure(
                     self.method_id,
                     "failed",
                     requested,
-                    "MTT không cập nhật dữ liệu tổng hợp: toàn bộ output vẫn là dòng train gốc",
+                    "Deep distillation không cập nhật dữ liệu: toàn bộ output vẫn là dòng train gốc",
                 )
         else:
             exact_pairs = None
@@ -182,6 +235,10 @@ class TDBenchGenerator:
                     "được khai báo, không phải chạy nguyên trạng TDBench"
                 ),
                 "source_patches": source_patches,
+                "parameter_profile": str(
+                    self.options.get("parameter_profile", "configured_pilot")
+                ),
+                "configured_parameters": configured_parameters,
                 "budget_contract": budget_diagnostics["budget_contract"],
                 "n_per_label": int(per_label),
                 **budget_diagnostics,
@@ -191,6 +248,23 @@ class TDBenchGenerator:
             },
             timings={"generate": elapsed, "total": elapsed},
         )
+
+
+def _validate_trajectory_options(parameters: dict[str, Any], *, datm: bool = False) -> None:
+    """Chặn cấu hình quỹ đạo vượt số snapshot trước khi gọi source upstream."""
+    positive = ("n_epochs", "n_experts", "expert_epochs", "syn_steps", "n_iter")
+    if any(int(parameters[key]) < 1 for key in positive):
+        raise ValueError(f"Tham số trajectory phải dương: {positive}")
+    max_start = int(parameters["max_start_epoch"])
+    if max_start < 0 or max_start + int(parameters["expert_epochs"]) > int(parameters["n_epochs"]):
+        raise ValueError("max_start_epoch + expert_epochs phải <= n_epochs")
+    if datm:
+        minimum = int(parameters["min_start_epoch"])
+        current = int(parameters["current_max_start_epoch"])
+        if not 0 <= minimum <= current <= max_start:
+            raise ValueError("DATM cần 0 <= min_start <= current_max_start <= max_start")
+        if int(parameters["expansion_end_epoch"]) < 1:
+            raise ValueError("DATM yêu cầu expansion_end_epoch >= 1")
 
 
 def _plan_tdbench_budget(
@@ -307,7 +381,7 @@ def _load_distill_module(repo: Path, module_name: str):
 def _patch_tdbench_source(module_name: str, source: str) -> tuple[str, list[str]]:
     """Áp dụng patch tối thiểu; source lệch mẫu đã khóa thì dừng.
 
-    MTT có đúng bảy patch khai báo. Chúng sửa lỗi thực thi làm expert
+    MTT/DATM có đúng bảy patch khai báo. Chúng sửa lỗi thực thi làm expert
     trùng seed, snapshot bị alias, synthetic tensor không nhận gradient và quỹ
     đạo bị chọn lặp lại. Do source đã thay đổi, artifact luôn phải mang
     nhãn benchmark-source adapter và danh sách patch, dù mục tiêu MTT không đổi.
@@ -321,14 +395,23 @@ def _patch_tdbench_source(module_name: str, source: str) -> tuple[str, list[str]
             "kip_jax_config_import_compat",
         )
         patches.append("kip_jax_config_import_compat")
-    elif module_name == "trajectory_matching":
+    elif module_name == "gradient_matching":
+        source = _replace_once(
+            source,
+            "X_syn = torch.tensor(X[support_idxs]).float().to(device)",
+            "X_syn = torch.tensor(X[support_idxs]).float().to(device).requires_grad_(True)",
+            "gm_trainable_synthetic_data",
+        )
+        patches.append("gm_trainable_synthetic_data")
+    elif module_name in {"trajectory_matching", "datm"}:
+        prefix = "mtt" if module_name == "trajectory_matching" else "datm"
         # Patch 1/7: TDBench cũ luôn lấy expert_seeds[0], làm các expert
         # trùng khởi tạo. Dùng seed thứ i để tập expert thực sự đa dạng.
         source = _replace_once(
             source,
             "random_state = expert_seeds[0]",
             "random_state = expert_seeds[i]",
-            "mtt_distinct_expert_seeds",
+            f"{prefix}_distinct_expert_seeds",
         )
         source = _replace_once(
             # Patch 2/7: clone snapshot khởi tạo, tránh tensor cũ cùng trỏ
@@ -338,7 +421,7 @@ def _patch_tdbench_source(module_name: str, source: str) -> tuple[str, list[str]
             "        opt_model = optim.SGD",
             "trajectories.append([p.detach().cpu().clone() for p in model.parameters()])\n"
             "        opt_model = optim.SGD",
-            "mtt_clone_initial_expert_snapshot",
+            f"{prefix}_clone_initial_expert_snapshot",
         )
         source = _replace_once(
             # Patch 3/7: clone cả snapshot sau mỗi epoch vì đây là các
@@ -348,7 +431,7 @@ def _patch_tdbench_source(module_name: str, source: str) -> tuple[str, list[str]
             "        all_trajectories.append",
             "trajectories.append([p.detach().cpu().clone() for p in model.parameters()])\n"
             "        all_trajectories.append",
-            "mtt_clone_epoch_expert_snapshots",
+            f"{prefix}_clone_epoch_expert_snapshots",
         )
         source = _replace_once(
             # Patch 4/7: dữ liệu synthetic là biến tối ưu; nếu không
@@ -356,14 +439,14 @@ def _patch_tdbench_source(module_name: str, source: str) -> tuple[str, list[str]
             source,
             "X_syn = torch.tensor(X[support_idxs]).float().to(device)",
             "X_syn = torch.tensor(X[support_idxs]).float().to(device).requires_grad_(True)",
-            "mtt_trainable_synthetic_data",
+            f"{prefix}_trainable_synthetic_data",
         )
         source = _replace_once(
             # Patch 5/7: learning-rate synthetic cũng nằm trong optimizer MTT.
             source,
             "syn_lr = torch.tensor(lr_teacher).to(device)",
             "syn_lr = torch.tensor(lr_teacher).to(device).requires_grad_(True)",
-            "mtt_trainable_learning_rate",
+            f"{prefix}_trainable_learning_rate",
         )
         source = _replace_once(
             # Patch 6/7: tạo RNG một lần để chuỗi start_epoch thay đổi
@@ -374,25 +457,29 @@ def _patch_tdbench_source(module_name: str, source: str) -> tuple[str, list[str]
             "param_cache = {}\n"
             "    rng = random.Random(random_state)\n\n"
             "    for it in range(n_iter):",
-            "mtt_persistent_trajectory_rng",
+            f"{prefix}_persistent_trajectory_rng",
+        )
+        rng_reset = (
+            "        rng = random.Random(random_state)\n\n"
+            if module_name == "datm"
+            else "        rng = random.Random(random_state)\n"
         )
         source = _replace_once(
             # Patch 7/7: bỏ reset RNG trong loop; reset khiến iteration nào
             # cũng lấy cùng một đoạn quỹ đạo.
             source,
-            "        rng = random.Random(random_state)\n"
-            "        start_epoch = rng.randint(0, max_start_epoch)",
-            "        start_epoch = rng.randint(0, max_start_epoch)",
-            "mtt_remove_per_iteration_rng_reset",
+            rng_reset,
+            "",
+            f"{prefix}_remove_per_iteration_rng_reset",
         )
         patches.extend([
-            "mtt_distinct_expert_seeds",
-            "mtt_clone_initial_expert_snapshot",
-            "mtt_clone_epoch_expert_snapshots",
-            "mtt_trainable_synthetic_data",
-            "mtt_trainable_learning_rate",
-            "mtt_persistent_trajectory_rng",
-            "mtt_remove_per_iteration_rng_reset",
+            f"{prefix}_distinct_expert_seeds",
+            f"{prefix}_clone_initial_expert_snapshot",
+            f"{prefix}_clone_epoch_expert_snapshots",
+            f"{prefix}_trainable_synthetic_data",
+            f"{prefix}_trainable_learning_rate",
+            f"{prefix}_persistent_trajectory_rng",
+            f"{prefix}_remove_per_iteration_rng_reset",
         ])
     return source, patches
 

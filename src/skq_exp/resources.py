@@ -59,8 +59,13 @@ def estimate_selection_cost(
         # đây là ước lượng RAM có đơn vị, không phải trần budget tùy ý.
         operations += float(100 * max(1, budget_rows) ** 2 * max(1, n_features))
         base_bytes += int(10 * max(1, budget_rows) ** 2 * 8 * 6)
-    if method_id.startswith("s_mtt"):
+    if method_id.startswith(("s_mtt", "s_datm")):
         operations += float(100 * n_rows * n_features * max(2, n_classes))
+    if method_id.startswith("s_gm"):
+        # GM tính gradient trên real và synthetic theo lớp qua nhiều epoch.
+        # Hệ số 128 đại diện hidden width của profile pilot mặc định.
+        operations += float(100 * n_rows * n_features * 128)
+        base_bytes += int((n_rows + budget_rows) * 128 * max(2, n_classes) * 8)
     if method_id in {"p04_skq_lrq_sq", "p05_skq_lrq_mq"}:
         operations += float(5 * n_rows * n_features * (3 if method_id.endswith("mq") else 1))
     working_bytes = int((base_bytes + rff_bytes) * 1.8)
