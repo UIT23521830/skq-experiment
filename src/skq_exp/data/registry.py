@@ -1,7 +1,8 @@
-"""File này ghi danh tính và cách chia của sáu public dataset.
+"""File này ghi danh tính và cách chia của mọi dataset đã đăng ký.
 
 Tên dataset ID không phụ thuộc tên file tải về. Các con số dự kiến giúp phát hiện
-nhầm phiên bản trước khi một dataset đi vào thực nghiệm.
+nhầm phiên bản trước khi một dataset đi vào thực nghiệm. Cách đọc dữ liệu ngoài
+nằm trong ``data/adapters``; registry này chỉ giữ metadata khoa học ổn định.
 """
 
 from __future__ import annotations

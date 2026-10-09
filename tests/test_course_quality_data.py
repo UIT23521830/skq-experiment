@@ -5,6 +5,7 @@ import json
 import numpy as np
 import pandas as pd
 
+from skq_exp.data.adapters import get_dataset_adapter, prepare_external_dataset
 from skq_exp.data.course_quality import prepare_course_quality_snapshot
 from skq_exp.data.prepare import load_processed
 
@@ -47,8 +48,11 @@ def test_prepare_course_quality_preserves_four_snapshots(tmp_path):
         test["score"] = test["score"].fillna(0) + phase
         test.to_csv(raw / f"test_med_{phase}.csv", index=False)
 
-    manifest = prepare_course_quality_snapshot(
-        raw, processed, validate_expected_rows=False,
+    assert get_dataset_adapter("course_quality_med_v1").dataset_id == (
+        "course_quality_med_v1"
+    )
+    manifest = prepare_external_dataset(
+        "course_quality_med_v1", raw, processed, validate_expected_rows=False,
     )
     assert manifest.exists()
     data = load_processed("course_quality_med_v1", processed, mmap=False)
@@ -56,6 +60,10 @@ def test_prepare_course_quality_preserves_four_snapshots(tmp_path):
     assert data["X_dev"].shape == (3, 8)
     assert np.array_equal(data["X_test"], data["X_test_phase4"])
     assert set(np.unique(data["y_train"])) == {0, 1, 2}
+    assert data["X_train"][2, 0] == 4.0
+    assert prepare_course_quality_snapshot(
+        raw, processed, validate_expected_rows=False,
+    ) == manifest
     schema = json.loads((manifest.parent / "schema.json").read_text(encoding="utf-8"))
     assert "label" not in schema["processed_columns"]
     assert "user_id_enc" not in schema["processed_columns"]

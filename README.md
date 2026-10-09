@@ -242,8 +242,9 @@ snapshot nên không được đưa qua splitter của các dataset UCI. Lệnh 
 `val_med.csv` làm dev, khóa test ở stage screening và lưu đủ bốn phase:
 
 ```bash
-skq prepare-course-quality \
+skq prepare-external \
   --config configs/pilot_course_quality_med_quick_seed11.json \
+  --dataset course_quality_med_v1 \
   --input-dir /kaggle/input/datasets/hoangzyyng/cq-med
 skq run --config configs/pilot_course_quality_med_quick_seed11.json
 ```
@@ -258,6 +259,12 @@ Audit snapshot hiện có overlap user-course giữa train/dev/test, nên cả h
 đều mang `evidence_role=integration_debug_split_overlap`. Metric dùng để kiểm tra
 pipeline, chưa được đưa vào bảng confirmatory. Bốn test snapshot được lưu dưới
 `X_test_phase1.npy` … `X_test_phase4.npy`; runner s1 không đọc chúng.
+
+Các dataset ngoài dùng chung lệnh `prepare-external`. Mỗi dataset có một module
+trong `src/skq_exp/data/adapters/`, kế thừa contract base hoặc khung CSV pre-split
+và được đăng ký tường minh trong adapter registry. Alias
+`prepare-course-quality` vẫn được giữ để notebook cũ tiếp tục chạy. Hướng dẫn và
+skeleton nằm trong [`docs/DATASET_ADAPTERS.md`](docs/DATASET_ADAPTERS.md).
 
 ## 8. Metrics
 
