@@ -35,7 +35,21 @@ from ..methods.proposed.query_losses import make_oof_query_losses
 from ..methods.result import SelectionResult
 from ..methods.synthetic.result import GeneratedDatasetResult
 from ..resources import ResourceGuard, ResourceLimitError, enforce_preflight, estimate_selection_cost
-from ..training import evaluate_generated, evaluate_selection
+from ..training import (
+    evaluate_fitted_learner,
+    fit_generated_learner,
+    fit_selection_learner,
+)
+from .provenance import dataset_fingerprint, protocol_hash
+
+
+LRQ_METHODS = {
+    "p04_skq_lrq_sq",
+    "p05_skq_lrq_mq",
+    "p08_skq_gonzalez_lrq_sq",
+    "p09_skq_gonzalez_lrq_mq",
+}
+GONZALEZ_PARENT_PREFIX = "gonzalez_pool_"
 
 
 def run_smoke(config: ExperimentConfig) -> list[dict[str, Any]]:
@@ -51,9 +65,12 @@ def run_smoke(config: ExperimentConfig) -> list[dict[str, Any]]:
             data["X_train"], data["y_train"], config.budget_ratio,
             row_ids=data["row_ids_train"], **kwargs,
         )
-        _model, metrics, _predictions = evaluate_selection(
-            selection, data["X_train"], data["y_train"], data["X_dev"], data["y_dev"],
+        fitted = fit_selection_learner(
+            selection, data["X_train"], data["y_train"],
             learner_id="lr", model_seed=config.model_seed,
+        )
+        metrics, _predictions = evaluate_fitted_learner(
+            fitted, data["X_dev"], data["y_dev"],
         )
         rows.append({
             "method_id": method_id, "status": selection.status,
@@ -78,7 +95,10 @@ def run_config(
     if config.stage_id == "s0_smoke":
         return run_smoke(config)
     datasets = [dataset_id] if dataset_id else list(config.dataset_ids)
-    freeze_manifest = _load_freeze_manifest(config, required=config.stage_id == "s2_confirm")
+    freeze_manifest = _load_freeze_manifest(
+        config,
+        required=config.stage_id == "s2_confirm" or config.requires_freeze_manifest,
+    )
     excluded = set(exclude_method_ids)
     unknown_excluded = excluded - set(config.method_ids)
     if unknown_excluded:
@@ -101,14 +121,14 @@ def run_config(
     layout = ArtifactLayout(config.paths.artifact_root)
     for current_dataset in datasets:
         data = load_processed(current_dataset, config.paths.processed_root)
-        data_fingerprint = _dataset_fingerprint(config, current_dataset)
-        if config.stage_id == "s2_confirm":
+        data_fingerprint = dataset_fingerprint(config, current_dataset)
+        if config.stage_id == "s2_confirm" or config.requires_freeze_manifest:
             expected = freeze_manifest["dataset_fingerprints"].get(current_dataset)
             if expected != data_fingerprint:
                 raise RuntimeError(
                     f"Freeze fingerprint không khớp {current_dataset}: {expected} != {data_fingerprint}"
                 )
-        eval_name = "test" if config.stage_id == "s2_confirm" else "dev"
+        eval_names = _evaluation_splits(config, current_dataset, data)
         selection_cache: dict[tuple[str, int], SelectionResult] = {}
         structure_cache: dict[tuple[str, int], dict[str, np.ndarray]] = {}
         query_cache: dict[tuple[tuple[str, ...], int], tuple[np.ndarray, dict]] = {}
@@ -149,74 +169,185 @@ def run_config(
                             result, current_method, "storage_limit", str(error),
                         )
                 for current_learner in learners:
-                    manifest = _manifest(
-                        config, current_dataset, current_method, current_learner,
-                        selector_seed, eval_name, data_fingerprint,
-                    )
-                    run_dir = layout.run_dir(
+                    common_run_dir = layout.run_dir(
                         config.experiment_id, config.protocol_id, config.stage_id,
                         current_dataset, current_method, config.budget_ratio,
                         selector_seed, current_learner, config.model_seed,
                     )
-                    if resume:
-                        completed = _load_completed_run(run_dir, manifest)
-                        if completed is not None:
-                            ledger.append(completed)
-                            continue
+                    pending: list[tuple[str, dict[str, Any], Path]] = []
+                    learner_rows: list[dict[str, Any]] = []
+                    for eval_name in eval_names:
+                        manifest = _manifest(
+                            config, current_dataset, current_method, current_learner,
+                            selector_seed, eval_name, data_fingerprint,
+                        )
+                        run_dir = (
+                            common_run_dir / f"eval-{eval_name}"
+                            if len(eval_names) > 1 else common_run_dir
+                        )
+                        if resume:
+                            completed = _load_completed_run(run_dir, manifest)
+                            if completed is not None:
+                                learner_rows.append(completed)
+                                continue
+                        pending.append((eval_name, manifest, run_dir))
+
+                    if not pending:
+                        ledger.extend(learner_rows)
+                        _persist_ledger_rows(config, learner_rows)
+                        _save_temporal_summary(common_run_dir, learner_rows, eval_names)
+                        continue
+
                     allowed = allowed_learners_for(
                         current_method,
                         (config.method_options or {}).get(current_method),
                     )
                     if allowed is not None and current_learner not in allowed:
-                        blocked = _failure_like(result, current_method, "na_contract", f"Protocol chỉ cho {current_method} chạy với {allowed}")
-                        _save_failure_manifest(run_dir, manifest, blocked)
-                        ledger.append({**manifest, "status": "na_contract", "reason": blocked.diagnostics["reason"]})
+                        blocked = _failure_like(
+                            result, current_method, "na_contract",
+                            f"Protocol chỉ cho {current_method} chạy với {allowed}",
+                        )
+                        for _eval_name, manifest, run_dir in pending:
+                            _save_failure_manifest(run_dir, manifest, blocked)
+                            learner_rows.append({
+                                **manifest,
+                                "status": "na_contract",
+                                "reason": blocked.diagnostics["reason"],
+                            })
+                        ledger.extend(learner_rows)
+                        _persist_ledger_rows(config, learner_rows)
+                        _save_temporal_summary(common_run_dir, learner_rows, eval_names)
                         continue
                     if result.status != "success":
-                        _save_failure_manifest(run_dir, manifest, result)
-                        ledger.append({**manifest, "status": result.status, "reason": result.diagnostics.get("reason")})
+                        for _eval_name, manifest, run_dir in pending:
+                            _save_failure_manifest(run_dir, manifest, result)
+                            learner_rows.append({
+                                **manifest,
+                                "status": result.status,
+                                "reason": result.diagnostics.get("reason"),
+                            })
+                        ledger.extend(learner_rows)
+                        _persist_ledger_rows(config, learner_rows)
+                        _save_temporal_summary(common_run_dir, learner_rows, eval_names)
                         continue
-                    if current_method == "c00_full_train":
-                        layout.save_full_reference(run_dir, result, manifest)
-                    else:
-                        if artifact_ref is None:
-                            raise RuntimeError("Method thành công nhưng thiếu canonical artifact reference")
-                        layout.save_run_reference(run_dir, result, manifest, artifact_ref)
+
+                    for _eval_name, manifest, run_dir in pending:
+                        if current_method == "c00_full_train":
+                            layout.save_full_reference(run_dir, result, manifest)
+                        else:
+                            if artifact_ref is None:
+                                raise RuntimeError(
+                                    "Method thành công nhưng thiếu canonical artifact reference"
+                                )
+                            layout.save_run_reference(
+                                run_dir, result, manifest, artifact_ref,
+                            )
+
                     try:
-                        _enforce_storage(config, layout, reserve_bytes=2 * 1024 * 1024)
+                        _enforce_storage(
+                            config, layout, reserve_bytes=2 * 1024 * 1024,
+                        )
+                        max_threads = int(
+                            (config.resource or {}).get("max_threads", 4)
+                        )
                         if isinstance(result, GeneratedDatasetResult):
-                            model, metrics, predictions = evaluate_generated(
-                                result, np.asarray(data["y_train"]),
-                                np.asarray(data[f"X_{eval_name}"]), np.asarray(data[f"y_{eval_name}"]),
-                                learner_id=current_learner, model_seed=config.model_seed,
-                                X_inner_val=None, y_inner_val=None,
-                                max_threads=int((config.resource or {}).get("max_threads", 4)),
+                            fitted = fit_generated_learner(
+                                result,
+                                np.asarray(data["y_train"]),
+                                learner_id=current_learner,
+                                model_seed=config.model_seed,
+                                X_inner_val=None,
+                                y_inner_val=None,
+                                max_threads=max_threads,
                             )
                         else:
-                            model, metrics, predictions = evaluate_selection(
-                                result, np.asarray(data["X_train"]), np.asarray(data["y_train"]),
-                                np.asarray(data[f"X_{eval_name}"]), np.asarray(data[f"y_{eval_name}"]),
-                                learner_id=current_learner, model_seed=config.model_seed,
-                                X_inner_val=None, y_inner_val=None,
-                                max_threads=int((config.resource or {}).get("max_threads", 4)),
+                            fitted = fit_selection_learner(
+                                result,
+                                np.asarray(data["X_train"]),
+                                np.asarray(data["y_train"]),
+                                learner_id=current_learner,
+                                model_seed=config.model_seed,
+                                X_inner_val=None,
+                                y_inner_val=None,
+                                max_threads=max_threads,
                             )
-                        _save_evaluation(
-                            run_dir, model, metrics, predictions,
-                            policy=config.artifact_policy, layout=layout,
-                            experiment_id=config.experiment_id,
-                            reusable_artifact_bytes=int((artifact_ref or {}).get("artifact_bytes", 0)),
-                        )
-                        row = {**manifest, "status": "success", "macro_f1": metrics["overall"]["f1_macro"], "mcc": metrics["overall"]["mcc"]}
-                    except ArtifactStorageError as error:
-                        row = {**manifest, "status": "storage_limit", "reason": str(error)}
-                        atomic_json(run_dir / "evaluation_failure.json", row)
                     except MemoryError:
-                        row = {**manifest, "status": "oom"}
-                        atomic_json(run_dir / "evaluation_failure.json", row)
+                        _save_evaluation_failures(
+                            pending, learner_rows, "oom", None,
+                        )
+                        ledger.extend(learner_rows)
+                        _persist_ledger_rows(config, learner_rows)
+                        _save_temporal_summary(common_run_dir, learner_rows, eval_names)
+                        continue
                     except Exception as error:
-                        row = {**manifest, "status": "failed", "reason": repr(error)}
-                        atomic_json(run_dir / "evaluation_failure.json", row)
-                    ledger.append(row)
+                        _save_evaluation_failures(
+                            pending, learner_rows, "failed", repr(error),
+                        )
+                        ledger.extend(learner_rows)
+                        _persist_ledger_rows(config, learner_rows)
+                        _save_temporal_summary(common_run_dir, learner_rows, eval_names)
+                        continue
+
+                    for eval_index, (eval_name, manifest, run_dir) in enumerate(pending):
+                        try:
+                            metrics, predictions = evaluate_fitted_learner(
+                                fitted,
+                                np.asarray(data[f"X_{eval_name}"]),
+                                np.asarray(data[f"y_{eval_name}"]),
+                                evaluation_split_count=len(eval_names),
+                            )
+                            phase_policy = dict(config.artifact_policy or {})
+                            if eval_index > 0:
+                                phase_policy["save_models"] = False
+                            _save_evaluation(
+                                run_dir,
+                                fitted.model,
+                                metrics,
+                                predictions,
+                                policy=phase_policy,
+                                layout=layout,
+                                experiment_id=config.experiment_id,
+                                reusable_artifact_bytes=int(
+                                    (artifact_ref or {}).get("artifact_bytes", 0)
+                                ),
+                            )
+                            row = {
+                                **manifest,
+                                "status": "success",
+                                "macro_f1": metrics["overall"]["f1_macro"],
+                                "mcc": metrics["overall"]["mcc"],
+                            }
+                        except ArtifactStorageError as error:
+                            row = {
+                                **manifest,
+                                "status": "storage_limit",
+                                "reason": str(error),
+                            }
+                            atomic_json(run_dir / "evaluation_failure.json", row)
+                        except MemoryError:
+                            row = {**manifest, "status": "oom"}
+                            atomic_json(run_dir / "evaluation_failure.json", row)
+                        except Exception as error:
+                            row = {
+                                **manifest,
+                                "status": "failed",
+                                "reason": repr(error),
+                            }
+                            atomic_json(run_dir / "evaluation_failure.json", row)
+                        learner_rows.append(row)
+                    ledger.extend(learner_rows)
+                    _persist_ledger_rows(config, learner_rows)
+                    _save_temporal_summary(common_run_dir, learner_rows, eval_names)
+    _persist_ledger_rows(config, ledger)
+    return ledger
+
+
+def _persist_ledger_rows(
+    config: ExperimentConfig, rows: list[dict[str, Any]],
+) -> None:
+    """Checkpoint ledger sau từng learner để SIGKILL không xóa tiến độ trước đó."""
+    if not rows:
+        return
     ledger_path = config.paths.artifact_root / config.experiment_id / "run_ledger.json"
     existing = []
     if ledger_path.exists():
@@ -225,9 +356,79 @@ def run_config(
         except Exception:
             existing = []
     merged = {row.get("run_id", stable_hash(row)[:20]): row for row in existing}
-    merged.update({row.get("run_id", stable_hash(row)[:20]): row for row in ledger})
+    merged.update({row.get("run_id", stable_hash(row)[:20]): row for row in rows})
     atomic_json(ledger_path, list(merged.values()))
-    return ledger
+
+
+def _evaluation_splits(
+    config: ExperimentConfig,
+    dataset_id: str,
+    data: dict[str, Any],
+) -> tuple[str, ...]:
+    """Chọn split theo stage; temporal CourseQuality bắt buộc đủ bốn phase."""
+    if config.stage_id not in {"s2_confirm", "s4_temporal"}:
+        return ("dev",)
+    phases = tuple(
+        f"test_phase{phase}"
+        for phase in range(1, 5)
+        if f"X_test_phase{phase}" in data and f"y_test_phase{phase}" in data
+    )
+    if dataset_id == "course_quality_med_v1":
+        if len(phases) != 4:
+            raise RuntimeError(
+                "CourseQuality phải có đủ test_phase1..test_phase4 để đánh giá"
+            )
+        return phases
+    return phases or ("test",)
+
+
+def _save_evaluation_failures(
+    pending: list[tuple[str, dict[str, Any], Path]],
+    rows: list[dict[str, Any]],
+    status: str,
+    reason: str | None,
+) -> None:
+    for _eval_name, manifest, run_dir in pending:
+        row = {**manifest, "status": status}
+        if reason is not None:
+            row["reason"] = reason
+        run_dir.mkdir(parents=True, exist_ok=True)
+        atomic_json(run_dir / "evaluation_failure.json", row)
+        rows.append(row)
+
+
+def _save_temporal_summary(
+    common_run_dir: Path,
+    rows: list[dict[str, Any]],
+    eval_names: tuple[str, ...],
+) -> None:
+    if len(eval_names) <= 1:
+        return
+    by_split = {str(row.get("evaluation_split")): row for row in rows}
+    ordered = [by_split[name] for name in eval_names if name in by_split]
+    successful = [row for row in ordered if row.get("status") == "success"]
+    macro_values = [float(row["macro_f1"]) for row in successful]
+    mcc_values = [float(row["mcc"]) for row in successful]
+    atomic_json(common_run_dir / "temporal_summary.json", {
+        "evaluation_splits": list(eval_names),
+        "all_splits_present": len(ordered) == len(eval_names),
+        "all_splits_success": len(successful) == len(eval_names),
+        "status_by_split": {
+            str(row.get("evaluation_split")): str(row.get("status"))
+            for row in ordered
+        },
+        "macro_f1_by_split": {
+            str(row["evaluation_split"]): row.get("macro_f1") for row in ordered
+        },
+        "mcc_by_split": {
+            str(row["evaluation_split"]): row.get("mcc") for row in ordered
+        },
+        "macro_f1_mean": float(np.mean(macro_values)) if macro_values else None,
+        "macro_f1_worst": min(macro_values) if macro_values else None,
+        "mcc_mean": float(np.mean(mcc_values)) if mcc_values else None,
+        "mcc_worst": min(mcc_values) if mcc_values else None,
+        "fit_contract": "one_fitted_model_reused_for_all_temporal_splits",
+    })
 
 
 def _produce_or_block(
@@ -257,7 +458,7 @@ def _produce_or_block(
                 "Method cần frozen proposed_winner",
             )
         options["source_method"] = frozen_roles["proposed_winner"]
-    if method_id in {"p04_skq_lrq_sq", "p05_skq_lrq_mq"}:
+    if method_id in LRQ_METHODS:
         gate_reason, lrq_provenance = _validate_lrq_gate(
             config, options, freeze_manifest
         )
@@ -282,6 +483,16 @@ def _produce_or_block(
         method_id, len(y_train), X_train.shape[1], requested,
         rff_components=int(options.get("n_components", 256)),
         n_classes=len(np.unique(y_train)),
+        structured_work_rows=(
+            0.0
+            if method_id.startswith(("p", "d02", "d04", "d05"))
+            else None
+        ),
+        streaming_rff_rows=(
+            min(len(y_train), int(options.get("shard_rows", len(y_train))))
+            if method_id in {"p10_skq_mr_coretab_xgb", "p11_skq_mr_bdis"}
+            else None
+        ),
     )
     try:
         enforce_preflight(estimate, config.resource)
@@ -330,9 +541,29 @@ def _produce_or_block(
         )
     except (KeyError, RuntimeError) as error:
         return SelectionResult.failure(method_id, "blocked", requested, str(error))
-    kwargs: dict[str, Any] = {"row_ids": np.asarray(data["row_ids_train"]), "resource_guard": guard}
+    kwargs: dict[str, Any] = {
+        "row_ids": np.asarray(data["row_ids_train"]),
+        "resource_guard": guard,
+        "resource_policy": config.resource,
+    }
     structure = None
     if spec.needs_parent:
+        parent_source = str(options.get("parent_source", ""))
+        if parent_source.startswith(GONZALEZ_PARENT_PREFIX):
+            parent_failure = _ensure_gonzalez_candidate_structure(
+                config=config,
+                dataset_id=dataset_id,
+                seed=seed,
+                X_train=X_train,
+                y_train=y_train,
+                row_ids=np.asarray(data["row_ids_train"]),
+                data_fingerprint=data_fingerprint,
+                options=options,
+            )
+            if parent_failure is not None:
+                return SelectionResult.failure(
+                    method_id, parent_failure[0], requested, parent_failure[1]
+                )
         structure = _resolve_structure(
             options, seed, structure_cache, config, dataset_id,
             np.asarray(data["row_ids_train"]), data_fingerprint,
@@ -340,11 +571,16 @@ def _produce_or_block(
         if isinstance(structure, str):
             return SelectionResult.failure(method_id, "blocked", requested, structure)
         kwargs["parent_ids"] = structure["parent_ids"]
-        if method_id == "p03_skq_bdis_filtered":
+        if method_id == "p03_skq_bdis_filtered" or bool(
+            options.get("use_parent_candidate_mask", False)
+        ):
             if "candidate_mask" not in structure:
-                return SelectionResult.failure(method_id, "blocked", requested, "BDIS structure thiếu candidate_mask")
+                return SelectionResult.failure(
+                    method_id, "blocked", requested,
+                    "Parent structure thiếu candidate_mask",
+                )
             kwargs["candidate_mask"] = structure["candidate_mask"]
-    if method_id in {"p04_skq_lrq_sq", "p05_skq_lrq_mq"}:
+    if method_id in LRQ_METHODS:
         query_ids = tuple(options.get("query_learners", ["lr"] if method_id.endswith("sq") else ["lr", "rf", "xgb"]))
         cache_key = (query_ids, seed)
         if cache_key not in query_cache:
@@ -377,6 +613,12 @@ def _produce_or_block(
         result.timings["parent_structure"] = parent_total
         result.timings["query"] = query_total
         result.timings["total"] = own_total + parent_total + query_total
+        result.diagnostics.setdefault("parent_source", str(options.get("parent_source")))
+        if str(options.get("parent_source", "")).startswith(GONZALEZ_PARENT_PREFIX):
+            result.diagnostics.setdefault(
+                "gonzalez_candidate_multiplier",
+                float(options.get("candidate_multiplier", 1.0)),
+            )
     if getattr(selector, "structure_parent_ids_", None) is not None:
         structure = {
             "parent_ids": np.asarray(selector.structure_parent_ids_, dtype=np.int64),
@@ -394,6 +636,152 @@ def _produce_or_block(
             config, dataset_id, method_id, seed, structure, result, data_fingerprint,
         )
     return result
+
+
+def _ensure_gonzalez_candidate_structure(
+    *,
+    config: ExperimentConfig,
+    dataset_id: str,
+    seed: int,
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    row_ids: np.ndarray,
+    data_fingerprint: str,
+    options: dict[str, Any],
+) -> tuple[str, str] | None:
+    """Tạo/lưu candidate Gonzalez dùng chung mà không thêm một utility row giả.
+
+    Pool là artifact trung gian, không phải method được chấm điểm. Tên source và
+    multiplier phải khớp tuyệt đối để protocol hash/provenance không nhập nhằng.
+    Gonzalez upstream vẫn chạy nguyên hàm benchmark; SKQ chỉ dùng mask kết quả.
+    """
+    source = str(options.get("parent_source", ""))
+    multiplier = float(options.get("candidate_multiplier", 1.0))
+    if multiplier not in {1.0, 2.0}:
+        return "blocked", "Gonzalez candidate_multiplier chỉ cho phép 1.0 hoặc 2.0 trong protocol v3"
+    expected_source = f"gonzalez_pool_{int(multiplier)}x"
+    if source != expected_source:
+        return (
+            "blocked",
+            f"parent_source={source!r} không khớp candidate_multiplier={multiplier:g}; "
+            f"cần {expected_source!r}",
+        )
+    try:
+        requested_groups = int(options.get("gonzalez_structure_groups", 128))
+    except (TypeError, ValueError):
+        return "blocked", "gonzalez_structure_groups phải là số nguyên dương"
+    if requested_groups < 1:
+        return "blocked", "gonzalez_structure_groups phải là số nguyên dương"
+
+    structure_path = (
+        config.paths.artifact_root / "structures" / config.experiment_id /
+        dataset_id / source / f"ss{seed}" / "structure.npz"
+    )
+    if structure_path.exists():
+        metadata_path = structure_path.with_name("structure.json")
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            diagnostics = metadata["diagnostics"]
+            if (
+                float(diagnostics["candidate_multiplier"]) != multiplier
+                or int(diagnostics["structure_groups_requested"]) != requested_groups
+            ):
+                return (
+                    "blocked",
+                    "Gonzalez structure đã có nhưng không khớp multiplier/số anchor; "
+                    "hãy dùng experiment_id mới hoặc xóa artifact trung gian cũ",
+                )
+        except (OSError, ValueError, TypeError, KeyError) as error:
+            return "blocked", f"Gonzalez structure metadata không hợp lệ: {error!r}"
+        return None
+
+    candidate_ratio = min(1.0, float(config.budget_ratio) * multiplier)
+    candidate_rows = max(1, int(round(len(y_train) * candidate_ratio)))
+    try:
+        estimate = estimate_selection_cost(
+            "n_gcoreset_benchmark",
+            len(y_train),
+            X_train.shape[1],
+            candidate_rows,
+            n_classes=len(np.unique(y_train)),
+        )
+        enforce_preflight(estimate, config.resource)
+        selector = build_selector(
+            "n_gcoreset_benchmark",
+            seed,
+            external_root=config.paths.external_root,
+        )
+        parent_result = selector.select(X_train, y_train, candidate_ratio)
+    except ResourceLimitError as error:
+        return error.status, str(error)
+    except Exception as error:
+        return "failed", f"Không tạo được Gonzalez candidate pool: {error!r}"
+    if parent_result.status != "success":
+        return (
+            parent_result.status,
+            str(parent_result.diagnostics.get("reason", "Gonzalez candidate pool lỗi")),
+        )
+
+    center_indices = np.asarray(parent_result.indices, dtype=np.int64)
+    candidate_mask = np.zeros(len(y_train), dtype=bool)
+    candidate_mask[center_indices] = True
+    anchor_indices = center_indices[:min(requested_groups, len(center_indices))]
+    try:
+        parent_ids = _nearest_gonzalez_center_ids(
+            X_train, anchor_indices, ResourceGuard(config.resource)
+        )
+    except ResourceLimitError as error:
+        return error.status, str(error)
+    parent_result.diagnostics.update({
+        "artifact_role": "candidate_pool_only_not_utility_row",
+        "candidate_multiplier": multiplier,
+        "final_budget_ratio": float(config.budget_ratio),
+        "candidate_ratio": candidate_ratio,
+        "structure_rule": (
+            "nearest predeclared Gonzalez anchor Voronoi ID on every train row; "
+            "candidate mask keeps the complete 1x/2x Gonzalez pool"
+        ),
+        "structure_groups_requested": requested_groups,
+        "structure_groups": int(len(anchor_indices)),
+    })
+    structure = {
+        "parent_ids": parent_ids,
+        "row_ids": np.asarray(row_ids, dtype=np.int64),
+        "candidate_mask": candidate_mask,
+        "_producer_total_seconds": np.asarray(
+            parent_result.timings.get("total", 0.0), dtype=np.float64
+        ),
+    }
+    _save_structure(
+        config, dataset_id, source, seed, structure, parent_result,
+        data_fingerprint,
+    )
+    return None
+
+
+def _nearest_gonzalez_center_ids(
+    X_train: np.ndarray,
+    center_indices: np.ndarray,
+    guard: ResourceGuard,
+    *,
+    batch_rows: int = 512,
+) -> np.ndarray:
+    """Gán Voronoi ID theo batch để không tạo ma trận n×anchor trong RAM."""
+    X = np.asarray(X_train, dtype=np.float32)
+    centers = X[np.asarray(center_indices, dtype=np.int64)]
+    center_norm = np.sum(centers * centers, axis=1)
+    assignments = np.empty(len(X), dtype=np.int64)
+    for start in range(0, len(X), batch_rows):
+        guard.check("gonzalez_voronoi_assignment")
+        stop = min(len(X), start + batch_rows)
+        block = X[start:stop]
+        distances = (
+            np.sum(block * block, axis=1)[:, None]
+            + center_norm[None, :]
+            - 2.0 * (block @ centers.T)
+        )
+        assignments[start:stop] = np.argmin(distances, axis=1)
+    return assignments
 
 
 def _validate_lrq_gate(config, options, freeze_manifest):
@@ -416,9 +804,15 @@ def _validate_lrq_gate(config, options, freeze_manifest):
     frozen_base = freeze_manifest.get("base_winner_method_id")
     if not frozen_source or not frozen_base:
         return "Freeze manifest thiếu base_winner_method_id/base_winner_structure_source", {}
-    if parent_source != frozen_source:
+    allowed_parent_sources = {
+        str(source) for source in freeze_manifest.get(
+            "allowed_parent_sources", [frozen_source]
+        )
+    }
+    if parent_source not in allowed_parent_sources:
         return (
-            f"LRQ parent_source={parent_source} không khớp frozen source={frozen_source}",
+            f"LRQ parent_source={parent_source} không nằm trong các frozen source="
+            f"{sorted(allowed_parent_sources)}",
             {},
         )
     return None, {
@@ -427,6 +821,7 @@ def _validate_lrq_gate(config, options, freeze_manifest):
         "confirmatory_eligible": True,
         "evaluation_split": "test" if config.stage_id == "s2_confirm" else "dev",
         "frozen_base_winner_method_id": str(frozen_base),
+        "frozen_parent_source": parent_source,
     }
 
 
@@ -530,6 +925,12 @@ def _save_structure(
 
 
 def _structure_extraction_rule(method_id: str) -> str:
+    if method_id.startswith(GONZALEZ_PARENT_PREFIX):
+        return (
+            "Gonzalez farthest-first candidate mask at predeclared budget multiplier; "
+            "parent stratum is nearest predeclared Gonzalez-anchor Voronoi ID assigned "
+            "to every train row"
+        )
     rules = {
         "n01_coretab_dt_subset": "CoreTab-DT apply leaf ID on every train row",
         "n02_coretab_xgb_subset": "CoreTab-XGB pred_leaf vector on every train row",
@@ -650,7 +1051,7 @@ def _manifest(
         "budget_ratio": config.budget_ratio, "selector_seed": selector_seed,
         "learner_id": learner_id, "model_seed": config.model_seed,
         "evaluation_split": eval_name, "data_fingerprint": data_fingerprint,
-        "protocol_hash": _protocol_hash(config),
+        "protocol_hash": protocol_hash(config),
     }
     return {**identity, "run_id": stable_hash(identity)[:20], "package_version": __version__, "python": platform.python_version(), "created_unix": time.time()}
 
@@ -733,21 +1134,6 @@ def _save_evaluation(
     atomic_json(run_dir / "metrics_all.json", metrics)
 
 
-def _protocol_hash(config: ExperimentConfig) -> str:
-    payload = config.to_dict()
-    payload.pop("paths", None)
-    payload.pop("resource", None)
-    payload.pop("artifact_policy", None)
-    return stable_hash(payload)
-
-
-def _dataset_fingerprint(config: ExperimentConfig, dataset_id: str) -> str:
-    manifest = config.paths.processed_root / dataset_id / "preprocessing_manifest.json"
-    if not manifest.exists():
-        raise FileNotFoundError(f"Thiếu preprocessing manifest: {manifest}")
-    return sha256_file(manifest)
-
-
 def _method_artifact_identity(
     config: ExperimentConfig,
     dataset_id: str,
@@ -767,7 +1153,7 @@ def _method_artifact_identity(
         "split_seed": config.split_seed,
         "method_options": (config.method_options or {}).get(method_id, {}),
         "data_fingerprint": data_fingerprint,
-        "protocol_hash": _protocol_hash(config),
+        "protocol_hash": protocol_hash(config),
         "package_version": __version__,
     }
 

@@ -197,6 +197,12 @@ def load_processed(dataset_id: str, processed_root: str | Path, mmap: bool = Tru
         result[f"y_{split}"] = np.load(root / f"y_{split}.npy", mmap_mode=mode)
         result[f"row_ids_{split}"] = np.load(root / f"row_ids_{split}.npy", mmap_mode=mode)
     result["split_manifest"] = json.loads((root / "split_manifest.json").read_text(encoding="utf-8"))
+    for phase in range(1, 5):
+        feature_path = root / f"X_test_phase{phase}.npy"
+        label_path = root / f"y_test_phase{phase}.npy"
+        if feature_path.exists() and label_path.exists():
+            result[f"X_test_phase{phase}"] = np.load(feature_path, mmap_mode=mode)
+            result[f"y_test_phase{phase}"] = np.load(label_path, mmap_mode=mode)
     return result
 
 
@@ -315,4 +321,3 @@ def _overlap_audit(row_ids: np.ndarray, split: dict[str, np.ndarray]) -> dict[st
 def _class_counts(y: np.ndarray) -> dict[str, int]:
     labels, counts = np.unique(y, return_counts=True)
     return {str(int(label)): int(count) for label, count in zip(labels, counts)}
-

@@ -91,7 +91,9 @@ def main() -> None:
         "requested_rows": requested,
         "realized_rows": int(len(indices)),
         "compatibility_patches": [
-            "numpy.infty alias", "sklearn OneHotEncoder sparse->sparse_output adapter"
+            "numpy.infty alias",
+            "sklearn OneHotEncoder sparse->sparse_output adapter",
+            "dtype-normalized exact row identity mapping for upstream subset output",
         ],
         "timings": {"total": time.perf_counter() - started},
     })
@@ -121,16 +123,41 @@ def _onehot(y: np.ndarray) -> np.ndarray:
 
 
 def _map_rows_back(X, y, C, y_c):
+    """Ánh xạ subset upstream về index mà không phụ thuộc dtype trung gian.
+
+    AutoCoreset chọn ``C = P[C_prime]`` nên đây vẫn là subset dòng thật. Một số
+    nhánh sklearn/upstream nâng float32/int thành float64; so sánh byte trực tiếp
+    khi đó thất bại dù giá trị và dòng không đổi. Ép đầu ra về đúng dtype nguồn
+    trước khi lập khóa giữ nguyên identity dòng, không dùng nearest-neighbour và
+    không biến điểm tổng hợp thành subset.
+    """
+    X = np.asarray(X)
+    y = np.asarray(y)
+    C = np.asarray(C)
+    y_c = np.asarray(y_c)
+    if C.ndim != X.ndim or C.shape[1:] != X.shape[1:]:
+        raise RuntimeError(
+            f"AutoCoreset trả shape feature không khớp train: {C.shape} != (*, {X.shape[1:]})"
+        )
+    if y_c.shape[1:] != y.shape[1:]:
+        raise RuntimeError(
+            f"AutoCoreset trả shape label không khớp train: {y_c.shape} != (*, {y.shape[1:]})"
+        )
+
+    def key(row, label):
+        row_bytes = np.ascontiguousarray(row, dtype=X.dtype).tobytes()
+        label_bytes = np.ascontiguousarray(label, dtype=y.dtype).tobytes()
+        return row_bytes, label_bytes
+
     buckets: dict[tuple[bytes, bytes], list[int]] = {}
     for index, (row, label) in enumerate(zip(X, y)):
-        key = (np.ascontiguousarray(row).tobytes(), np.ascontiguousarray(label).tobytes())
-        buckets.setdefault(key, []).append(index)
+        buckets.setdefault(key(row, label), []).append(index)
     mapped = []
     for row, label in zip(C, y_c):
-        key = (np.ascontiguousarray(row).tobytes(), np.ascontiguousarray(label).tobytes())
-        if not buckets.get(key):
+        row_key = key(row, label)
+        if not buckets.get(row_key):
             raise RuntimeError("Không thể round-trip một dòng AutoCoreset về train index")
-        mapped.append(buckets[key].pop(0))
+        mapped.append(buckets[row_key].pop(0))
     return np.asarray(mapped, dtype=np.int64)
 
 

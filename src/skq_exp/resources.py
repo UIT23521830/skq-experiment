@@ -37,15 +37,26 @@ def estimate_selection_cost(
     *,
     rff_components: int = 256,
     n_classes: int = 2,
+    structured_work_rows: float | None = None,
+    streaming_rff_rows: int | None = None,
 ) -> CostEstimate:
-    rff_bytes = int(n_rows * rff_components * 4)
+    rff_storage_rows = n_rows if streaming_rff_rows is None else min(
+        n_rows, max(1, int(streaming_rff_rows))
+    )
+    rff_bytes = int(rff_storage_rows * rff_components * 4)
     base_bytes = int(n_rows * n_features * 4)
     operations = float(n_rows * n_features)
-    if method_id.startswith(("p0", "d02", "d04", "d05")):
+    if method_id == "d05_equal_group_weight":
+        # D05 chỉ dùng lại index của source method rồi tính lại trọng số theo group.
+        rff_bytes = 0
+    elif method_id.startswith(("p", "d02", "d04")):
         operations += float(n_rows * n_features * rff_components)
-        # Class/group partition làm chi phí thực nhỏ hơn worst-case global; dùng
-        # n_classes như một ước lượng bảo thủ có thể giải thích được.
-        operations += float(budget_rows * n_rows * rff_components / max(1, n_classes))
+        # Khi chưa có structure, giữ estimate global bảo thủ. Runner có thể hoãn
+        # hạng herding bằng structured_work_rows=0; selector sẽ kiểm lại sau khi
+        # biết chính xác quota và candidate count của từng group.
+        if structured_work_rows is None:
+            structured_work_rows = budget_rows * n_rows / max(1, n_classes)
+        operations += float(structured_work_rows * rff_components)
     if "craig" in method_id:
         pairwise_bytes = int(n_rows * n_rows * 8)
         gradient_bytes = int(n_rows * n_features * max(2, n_classes) * 8)
@@ -66,7 +77,10 @@ def estimate_selection_cost(
         # Hệ số 128 đại diện hidden width của profile pilot mặc định.
         operations += float(100 * n_rows * n_features * 128)
         base_bytes += int((n_rows + budget_rows) * 128 * max(2, n_classes) * 8)
-    if method_id in {"p04_skq_lrq_sq", "p05_skq_lrq_mq"}:
+    if method_id in {
+        "p04_skq_lrq_sq", "p05_skq_lrq_mq",
+        "p08_skq_gonzalez_lrq_sq", "p09_skq_gonzalez_lrq_mq",
+    }:
         operations += float(5 * n_rows * n_features * (3 if method_id.endswith("mq") else 1))
     working_bytes = int((base_bytes + rff_bytes) * 1.8)
     return CostEstimate(rff_bytes, working_bytes, operations)

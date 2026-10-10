@@ -20,7 +20,12 @@ coarsen micro-strata theo class quota, biểu diễn RBF bằng Random Fourier F
 (RFF), chọn điểm bằng kernel herding và
 tìm trọng số không âm tổng bằng khối lượng nhóm qua simplex-QP. P04/P05 ghép thêm
 OOF query loss để bảo toàn vùng khó của một hoặc nhiều learner mà không dùng
-dev/test.
+dev/test. Protocol v3 bổ sung P06–P09 để kiểm tra riêng đóng góp của coverage
+Gonzalez, QP và query loss; đây là biến thể đề xuất để screening, không phải
+baseline SOTA hay implementation từ một paper khác.
+Protocol v4 giữ nguyên P06/P08 và thêm P10/P11 dạng sharded merge-reduce cho
+dữ liệu lớn: mọi dòng train vẫn được đọc, nhưng parent và RFF/QP chỉ giữ một
+shard/nhóm trong bộ nhớ; không dùng proxy dataset.
 
 Test không được dùng để chọn method hoặc siêu tham số. Config pilot hiện đánh giá
 trên **dev**; kết quả đó chỉ phục vụ kiểm tra code và screening.
@@ -35,6 +40,22 @@ config/protocol hash. Config v1 được giữ lại để đọc đúng artifac
 `NA_CONTRACT`; thiếu dependency, vượt RAM hoặc vượt time gate vẫn được ghi
 `BLOCKED/PREDICTED_OOM/PREDICTED_TIMEOUT`, không bị xóa khỏi mẫu số. Tên ngắn
 `pilot_adult_seed11.json` là alias của full-v2.
+
+Protocol mở rộng
+[`pilot_adult_full_seed11_v3.json`](configs/pilot_adult_full_seed11_v3.json) giữ
+nguyên 22 dòng v2 và thêm P06–P09, thành 26 dòng/130 ô ở một seed. Tách config v3
+giúp artifact v2 cũ vẫn tái lập đúng protocol hash; không được trộn kết quả hai
+protocol như thể chúng là cùng một lượt chạy.
+Config
+[`pilot_adult_full_seed11_v4.json`](configs/pilot_adult_full_seed11_v4.json)
+giữ nguyên toàn bộ v3 và thêm P10/P11, thành 28 dòng/140 ô ở một seed. P10/P11
+là proposed adapter để kiểm tra khả năng mở rộng, không phải native CoreTab/BDIS.
+Config [`pilot_course_quality_med_seed11_v3.json`](configs/pilot_course_quality_med_seed11_v3.json)
+mở cùng portfolio 26 dòng cho CourseQuality ở vòng dev screen. Chỉ họ winner đã
+freeze mới được chuyển sang cả bốn temporal test; không dùng test để chọn giữa
+parent CoreTab và Gonzalez. Nhãn evidence `integration_debug_split_overlap` phải
+được giữ vì split do dataset cung cấp có nguồn train/validation trùng như đã
+audit, nên chưa phải confirmatory.
 
 | Nhóm | ID | Implementation và cách hiểu |
 |---|---|---|
@@ -57,6 +78,12 @@ config/protocol hash. Config v1 được giữ lại để đọc đúng artifac
 | Proposed | `p03_skq_bdis_filtered` | SKQ trên candidate/structure BDIS; chỉ mở khi BDIS gate qua |
 | Proposed | `p04_skq_lrq_sq` | P02 structure + OOF loss của LR |
 | Proposed | `p05_skq_lrq_mq` | P02 structure + OOF loss LR/RF/XGB |
+| Proposed screen | `p06_gonzalez_qp` | Candidate Gonzalez đúng 5%; Voronoi theo 128 Gonzalez anchor + simplex-QP, giữ nguyên tập index để cô lập đóng góp weighting |
+| Proposed screen | `p07_skq_gonzalez` | Gonzalez tạo pool 10%, SKQ nén về exact 5% bằng RFF/herding/QP |
+| Proposed screen | `p08_skq_gonzalez_lrq_sq` | P07 + OOF query loss của LR |
+| Proposed screen | `p09_skq_gonzalez_lrq_mq` | P07 + OOF query loss LR/RF/XGB |
+| Proposed scale-out | `p10_skq_mr_coretab_xgb` | CoreTab-XGB theo shard, gộp leaf nhỏ, SKQ streaming và exact budget toàn cục; không proxy |
+| Proposed scale-out | `p11_skq_mr_bdis` | BDIS candidate theo shard, SKQ streaming; cap theo union candidate, không pad/trùng |
 | Ablation | `d02_parent_structured_random` | Giữ structure/QP, thay herding bằng random trong nhóm |
 | Ablation | `d04_global_rff_quadrature` | Bỏ parent structure, vẫn giữ class/RFF/herding/QP |
 | Ablation | `d05_equal_group_weight` | Giữ index của P05, thay QP bằng trọng số đều trong nhóm |
@@ -72,10 +99,10 @@ tên cột, kiểu categorical và tokenizer/model checkpoint; runner hiện nh�
 thuộc tải model ngoài khi Kaggle Internet có thể bị tắt.
 
 `p00_structured_kquad` là engine dùng chung, không phải dòng kết quả. Trong
-`s1_screen`, P04/P05 được chạy trên **dev** với parent N02 đã khai báo trước và
+`s1_screen`, P04/P05 và P08/P09 được chạy trên **dev** với parent đã khai báo trước và
 artifact phải ghi `pre_freeze_dev_screen`, `confirmatory_eligible=false`. Đây chỉ
-là sàng lọc thăm dò, không phải tuyên bố N02 đã thắng. Khi chạy ngoài vòng screen,
-đặc biệt `s2_confirm` trên test, P04/P05 vẫn trả `GATE_LOCKED` nếu chưa có freeze
+là sàng lọc thăm dò, không phải tuyên bố parent đã thắng. Khi chạy ngoài vòng screen,
+đặc biệt `s2_confirm` trên test, các biến thể LRQ vẫn trả `GATE_LOCKED` nếu chưa có freeze
 manifest hoặc parent không khớp winner đã freeze.
 
 ## 3. Native, benchmark, synthetic khác nhau thế nào
@@ -234,6 +261,56 @@ Guard bảo vệ máy gồm:
 Repo ngoài không phải method nào cũng có điểm kiểm tra giữa vòng; với chúng,
 preflight là lớp bảo vệ chính. Requested size và realized size đều được lưu để
 không đánh đồng giới hạn khả thi của source với lỗi tài nguyên.
+
+## 7a. Chạy thử CourseQuality MED
+
+Snapshot Kaggle `hoangzyyng/cq-med` đã có train, validation và bốn temporal test
+snapshot nên không được đưa qua splitter của các dataset UCI. Lệnh sau giữ
+`val_med.csv` làm dev và lưu riêng đủ bốn phase:
+
+```bash
+skq prepare-external \
+  --config configs/pilot_course_quality_med_quick_seed11.json \
+  --dataset course_quality_med_v1 \
+  --input-dir /kaggle/input/datasets/hoangzyyng/cq-med
+skq run --config configs/pilot_course_quality_med_quick_seed11.json
+```
+
+Quick config chỉ chạy FullTrain-LR và StratifiedRandom-LR để kiểm tra schema trên
+toàn bộ 2.637.700 dòng train. Nó fit mỗi learner đúng một lần rồi đánh giá cùng
+model trên đủ `test_phase1` đến `test_phase4`; mỗi phase có run/metric riêng và
+`temporal_summary.json` báo mean/worst. Config
+`pilot_course_quality_med_temporal_seed11_v4.json` chuyển đầy đủ portfolio Adult
+hiện hành gồm 28 method × 5 learner sang CQ. Các method bậc hai/deep có thể bị
+resource gate trên tập lớn này; đó là trạng thái thực, không được thay bằng
+fallback.
+
+Audit snapshot hiện có overlap user-course giữa train/dev/test. Quick temporal
+run mang `evidence_role=integration_debug_split_overlap_temporal`; metric dùng để
+kiểm tra pipeline, chưa được đưa vào bảng confirmatory. Full config hiện vẫn là
+`s1_screen` nên chỉ đọc dev để chọn/freeze phương pháp. Sau khi tạo
+`artifacts/freeze/freeze_manifest.json` từ screen của chính CourseQuality, chạy
+`pilot_course_quality_med_temporal_seed11_v4.json` để đánh giá ma trận đầy đủ
+trên cả bốn test. Config temporal yêu cầu freeze manifest; P04/P05 và P08/P09
+không được mở test trước bước này. Khi stage là `s2_confirm` hoặc `s4_temporal`,
+runner bắt buộc CourseQuality có và đánh giá đủ bốn test.
+
+Nếu dùng cấu hình đã chốt từ Adult thay vì chọn lại trên CQ, tạo freeze chuyển
+giao **trước khi mở CQ test** bằng `skq freeze` và ghi
+`selection_basis=transferred_full_adult_v4_portfolio_predeclared_before_cq_test`
+và khóa cả `n02_coretab_xgb_subset` lẫn `gonzalez_pool_2x` bằng các option
+`--allowed-parent-source`. Đây vẫn chỉ là evidence integration vì snapshot CQ
+hiện có overlap. Lệnh Kaggle full dùng
+`scripts/run_kaggle_split_env.py --prepare-autocoreset`: 28 method × 5 learner ×
+4 test tạo 560 ledger row. Method vượt tài nguyên được giữ dưới trạng thái
+`predicted_oom`/`predicted_timeout`; không đổi thuật toán hoặc hạ budget 5%.
+
+Các dataset ngoài dùng chung lệnh `prepare-external`. Mỗi dataset có một module
+trong `src/skq_exp/data/adapters/`, kế thừa contract base hoặc khung CSV pre-split
+và được đăng ký tường minh trong adapter registry. Mọi dataset ngoài chỉ dùng
+`prepare-external`; không duy trì một lệnh hoặc module riêng lặp lại cho từng
+dataset. Hướng dẫn và skeleton nằm trong
+[`docs/DATASET_ADAPTERS.md`](docs/DATASET_ADAPTERS.md).
 
 ## 8. Metrics
 

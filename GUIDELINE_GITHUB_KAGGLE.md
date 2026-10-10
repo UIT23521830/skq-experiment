@@ -145,6 +145,45 @@ aggregate quét tất cả manifest, rồi archive chứa cả hai pha. File
 `kaggle_execution_summary.json`, `environment_panel.txt` và
 `environment_kip.txt` lưu provenance môi trường.
 
+### CourseQuality MED: full matrix trên bốn test
+
+Sau `prepare-external`, tạo freeze chuyển giao đã khai báo trước rồi chạy cùng
+orchestrator. Freeze này không tuyên bố là winner chọn từ CQ; nó khóa trước hai
+parent source CoreTab-XGB và Gonzalez từ protocol Adult, trước khi đọc metric CQ
+test. Cấu hình v4 chứa đủ 28 phương pháp của panel Adult hiện hành:
+
+```bash
+!skq freeze --config configs/kaggle_course_quality_temporal_v4_flat.json \
+  --base-winner-method p02_skq_coretab_xgb \
+  --base-winner-structure n02_coretab_xgb_subset \
+  --published-reference n02_coretab_xgb_subset \
+  --proposed-winner p08_skq_gonzalez_lrq_sq \
+  --selection-basis transferred_full_adult_v4_portfolio_predeclared_before_cq_test \
+  --allowed-parent-source n02_coretab_xgb_subset \
+  --allowed-parent-source gonzalez_pool_2x
+
+!python scripts/run_kaggle_split_env.py \
+  --config configs/kaggle_course_quality_temporal_v4_flat.json \
+  --dataset course_quality_med_v1 \
+  --artifact-root /kaggle/working/skq_artifacts \
+  --archive /kaggle/working/skq_results.tar.gz \
+  --prepare-autocoreset \
+  --max-ram-gb 24 --timeout-seconds 21600 --max-threads 4
+```
+
+Plan full v4 là 28 method × 5 learner và bốn temporal test, tức 560 ledger row.
+Hai `--allowed-parent-source` chỉ mở các parent đã hiện diện trong config và đã
+được khai báo trước; chúng không chọn winner từ CQ và không đọc metric test.
+Với CQ lớn, có thể lặp `--include-method METHOD_ID` để chia 28 method qua nhiều
+Kaggle job. Đây chỉ là bộ lọc lịch chạy: mỗi job vẫn dùng nguyên config và freeze,
+nên protocol hash không đổi. Các partition phải rời nhau và hợp lại đủ 28 method.
+Khi chạy một notebook liền mạch, nên thêm
+`--autocoreset-timeout-seconds 1800`: boundary AutoCoreset vẫn được thử đúng
+source nhưng không thể giữ toàn bộ panel vô thời hạn trên dữ liệu hàng triệu dòng.
+`--prepare-autocoreset` chạy boundary native trước panel; nếu upstream không hoàn
+tất, runner vẫn ghi trạng thái thật thay vì bỏ method. KIP bị resource gate hợp
+lệ không làm mất archive hoặc khiến Save & Run bị đánh lỗi hạ tầng.
+
 Runner hiện ghi đè đúng run directory khi cùng run ID và gộp ledger theo run ID,
 nhưng chưa có scheduler tự bỏ qua mọi run thành công. Vì vậy nên chạy theo method
 hoặc checkpoint sau từng nhóm trên Kaggle; không giả định lệnh bị ngắt sẽ tự resume

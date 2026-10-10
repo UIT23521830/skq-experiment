@@ -1,7 +1,8 @@
-"""File này ghi danh tính và cách chia của sáu public dataset.
+"""File này ghi danh tính và cách chia của mọi dataset đã đăng ký.
 
 Tên dataset ID không phụ thuộc tên file tải về. Các con số dự kiến giúp phát hiện
-nhầm phiên bản trước khi một dataset đi vào thực nghiệm.
+nhầm phiên bản trước khi một dataset đi vào thực nghiệm. Cách đọc dữ liệu ngoài
+nằm trong ``data/adapters``; registry này chỉ giữ metadata khoa học ổn định.
 """
 
 from __future__ import annotations
@@ -53,6 +54,12 @@ DATASET_SPECS = {
             "https://www.openml.org/d/41169",
             65_196, 27, 100, "stratified_70_15_15_all_classes",
         ),
+        DatasetSpec(
+            "course_quality_med_v1", "CourseQuality MED", "User-provided Kaggle snapshot",
+            "https://www.kaggle.com/datasets/hoangzyyng/cq-med",
+            3_297_128, 59, 3,
+            "provided_train_val_four_temporal_tests_test_locked",
+        ),
     ]
 }
 
@@ -62,4 +69,3 @@ def get_dataset_spec(dataset_id: str) -> DatasetSpec:
         return DATASET_SPECS[dataset_id]
     except KeyError as error:
         raise KeyError(f"Dataset chưa đăng ký: {dataset_id}") from error
-

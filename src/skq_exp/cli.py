@@ -16,8 +16,9 @@ from dataclasses import replace
 from pathlib import Path
 
 from .config import ExperimentConfig
-from .data import fetch_dataset, prepare_dataset
+from .data import fetch_dataset, prepare_dataset, prepare_external_dataset
 from .experiments import run_config, run_smoke
+from .experiments.freeze import create_freeze_manifest
 from .methods import allowed_learners_for, get_method_spec
 from .reports import aggregate_results
 
@@ -43,6 +44,11 @@ def main(argv: list[str] | None = None) -> int:
     prepare.add_argument("--config", required=True)
     prepare.add_argument("--dataset", required=True)
     prepare.add_argument("--overwrite", action="store_true")
+    prepare_external = sub.add_parser("prepare-external")
+    prepare_external.add_argument("--config", required=True)
+    prepare_external.add_argument("--input-dir", required=True)
+    prepare_external.add_argument("--dataset", required=True)
+    prepare_external.add_argument("--overwrite", action="store_true")
     fetch = sub.add_parser("fetch-data")
     fetch.add_argument("--config", required=True)
     fetch.add_argument("--dataset", required=True)
@@ -60,6 +66,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     run.add_argument("--learner")
     run.add_argument(
+        "--resume", action="store_true",
+        help="Bỏ qua các run đã có manifest và metrics khớp đúng run_id.",
+    )
+    run.add_argument(
+        "--reuse-method-artifacts", action="store_true",
+        help=(
+            "Dùng lại artifact selector/generator canonical đã kiểm tra identity; "
+            "hữu ích khi cô lập từng learner trong process riêng."
+        ),
+    )
+    run.add_argument(
         "--selector-seed", type=int, action="append",
         help="Ghi đè selector seed; ví dụ --selector-seed 11. Lặp option để thêm seed.",
     )
@@ -72,6 +89,21 @@ def main(argv: list[str] | None = None) -> int:
         help="Không khởi chạy method nếu ước lượng phép tính vượt ngưỡng này.",
     )
     run.add_argument("--save-model", action="store_true", help="Lưu fitted model; mặc định không lưu.")
+    freeze = sub.add_parser("freeze")
+    freeze.add_argument("--config", required=True)
+    freeze.add_argument("--base-winner-method", required=True)
+    freeze.add_argument("--base-winner-structure", required=True)
+    freeze.add_argument("--published-reference", required=True)
+    freeze.add_argument("--proposed-winner", required=True)
+    freeze.add_argument("--selection-basis", required=True)
+    freeze.add_argument(
+        "--allowed-parent-source", action="append", default=[],
+        help=(
+            "Parent source đã được khai báo trước khi mở test; có thể lặp option. "
+            "Mặc định chỉ cho base-winner-structure."
+        ),
+    )
+    freeze.add_argument("--overwrite", action="store_true")
     aggregate = sub.add_parser("aggregate")
     aggregate.add_argument("--artifact-root", required=True)
     args = parser.parse_args(argv)
@@ -85,6 +117,18 @@ def main(argv: list[str] | None = None) -> int:
     config = ExperimentConfig.from_json(args.config)
     if args.command == "plan":
         print(json.dumps(_plan(config, include_cells=args.show_cells), indent=2, ensure_ascii=False))
+        return 0
+    if args.command == "freeze":
+        print(create_freeze_manifest(
+            config,
+            base_winner_method_id=args.base_winner_method,
+            base_winner_structure_source=args.base_winner_structure,
+            published_reference=args.published_reference,
+            proposed_winner=args.proposed_winner,
+            selection_basis=args.selection_basis,
+            allowed_parent_sources=tuple(args.allowed_parent_source),
+            overwrite=args.overwrite,
+        ))
         return 0
     if getattr(args, "selector_seed", None):
         config = replace(config, selector_seeds=tuple(args.selector_seed))
@@ -113,12 +157,20 @@ def main(argv: list[str] | None = None) -> int:
             overwrite=args.overwrite,
         ))
         return 0
+    if args.command == "prepare-external":
+        print(prepare_external_dataset(
+            args.dataset, args.input_dir, config.paths.processed_root,
+            overwrite=args.overwrite,
+        ))
+        return 0
     if args.command == "fetch-data":
         print(fetch_dataset(args.dataset, config.paths.raw_root, overwrite=args.overwrite))
         return 0
     print(json.dumps(run_config(
         config, dataset_id=args.dataset, method_id=args.method, learner_id=args.learner,
         exclude_method_ids=tuple(getattr(args, "exclude_method", ())),
+        resume=bool(getattr(args, "resume", False)),
+        reuse_method_artifacts=bool(getattr(args, "reuse_method_artifacts", False)),
     ), indent=2, ensure_ascii=False, default=str))
     return 0
 
@@ -157,6 +209,13 @@ def _plan(config: ExperimentConfig, *, include_cells: bool = False) -> dict:
                 "learner_id": learner_id,
                 "contract": contract,
             })
+    if config.stage_id in {"s2_confirm", "s4_temporal"}:
+        evaluation_splits = (
+            [f"test_phase{phase}" for phase in range(1, 5)]
+            if "course_quality_med_v1" in config.dataset_ids else ["test"]
+        )
+    else:
+        evaluation_splits = ["dev"]
     result = {
         "experiment_id": config.experiment_id,
         "datasets": list(config.dataset_ids),
@@ -167,6 +226,8 @@ def _plan(config: ExperimentConfig, *, include_cells: bool = False) -> dict:
         "cells_total_per_dataset_seed": len(cells),
         "cells_planned": sum(cell["contract"] == "planned" for cell in cells),
         "cells_na_contract": sum(cell["contract"] == "na_contract" for cell in cells),
+        "evaluation_splits": evaluation_splits,
+        "evaluation_rows_total_per_dataset_seed": len(cells) * len(evaluation_splits),
     }
     if include_cells:
         result["cells"] = cells

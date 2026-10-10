@@ -2,6 +2,10 @@
   "schema_version": 3,
   "config_hash": "REPLACE_WITH_FROZEN_DEV_CONFIG_SHA256",
   "code_commit": "REPLACE_WITH_FULL_GIT_COMMIT",
+  "created_at_utc": "REPLACE_WITH_ISO_8601_UTC",
+  "selection_basis": "dev_screen_or_transferred_protocol_declared_before_test",
+  "source_experiment_id": "REPLACE_WITH_SOURCE_EXPERIMENT_ID",
+  "source_stage_id": "s1_screen",
   "base_winner_method_id": "p02_skq_coretab_xgb",
   "base_winner_structure_source": "n02_coretab_xgb_subset",
   "method_roles": {

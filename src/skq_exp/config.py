@@ -63,6 +63,14 @@ class ExperimentConfig:
             parent_payload = json.loads(parent_path.read_text(encoding="utf-8"))
             if "extends" in parent_payload:
                 raise ValueError("Chỉ hỗ trợ một tầng extends để config dễ kiểm toán")
+            # method_options là bảng theo method nên config con được phép thêm
+            # method mới mà không phải chép lại toàn bộ protocol cha. Các khóa
+            # của cùng một method vẫn được thay nguyên khối để provenance rõ ràng.
+            if "method_options" in payload:
+                payload["method_options"] = {
+                    **parent_payload.get("method_options", {}),
+                    **payload["method_options"],
+                }
             payload = {**parent_payload, **payload}
         base = config_path.parent.parent
         raw_paths = payload.pop("paths")
@@ -132,7 +140,10 @@ class ExperimentConfig:
             raise ValueError(f"Method cần method_options.parent_source: {missing_parent}")
         if not self.selector_seeds or len(set(self.selector_seeds)) != len(self.selector_seeds):
             raise ValueError("selector_seeds phải có ít nhất một giá trị và không trùng")
-        lrq_methods = {"p04_skq_lrq_sq", "p05_skq_lrq_mq"} & set(self.method_ids)
+        lrq_methods = {
+            "p04_skq_lrq_sq", "p05_skq_lrq_mq",
+            "p08_skq_gonzalez_lrq_sq", "p09_skq_gonzalez_lrq_mq",
+        } & set(self.method_ids)
         if self.stage_id == "s1_screen" and lrq_methods:
             if not self.test_locked:
                 raise ValueError("LRQ s1_screen chỉ được chạy khi test_locked=true")
@@ -145,6 +156,8 @@ class ExperimentConfig:
                     "LRQ s1_screen cần parent_source cụ thể khai báo trước: "
                     f"{unresolved}"
                 )
+        if self.stage_id == "s4_temporal" and self.test_locked:
+            raise ValueError("s4_temporal cần test_locked=false để đọc temporal test")
         if self.stage_id == "s2_confirm":
             if self.budget_ratio != 0.05 or tuple(self.learner_ids) != ("xgb",):
                 raise ValueError("confirmatory contract yêu cầu budget 5% và chỉ XGBoost")

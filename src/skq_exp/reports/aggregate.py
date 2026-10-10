@@ -19,10 +19,22 @@ def aggregate_results(artifact_root: str | Path) -> Path:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         metrics_path = manifest_path.parent / "metrics_overall.json"
         metrics = json.loads(metrics_path.read_text(encoding="utf-8")) if metrics_path.exists() else {}
+        failure_path = manifest_path.parent / "evaluation_failure.json"
+        failure = (
+            json.loads(failure_path.read_text(encoding="utf-8"))
+            if failure_path.exists() else {}
+        )
         cost_path = manifest_path.parent / "cost.json"
         cost = json.loads(cost_path.read_text(encoding="utf-8")) if cost_path.exists() else {}
+        status = failure.get("status", manifest.get("status"))
+        reason = failure.get("reason", manifest.get("reason"))
+        artifact_complete = metrics_path.exists()
+        if status == "success" and not artifact_complete:
+            status = "interrupted"
+            reason = reason or "Manifest đã ghi nhưng chưa có metrics_overall.json"
         rows.append({
-            **manifest, **metrics,
+            **manifest, **metrics, "status": status, "reason": reason,
+            "artifact_complete": artifact_complete,
             **{f"cost_{key}": value for key, value in cost.items() if not isinstance(value, (dict, list))},
             "artifact_dir": str(manifest_path.parent),
         })
@@ -62,4 +74,3 @@ def _attach_break_even(frame: pd.DataFrame) -> pd.DataFrame:
     frame = frame.copy()
     frame["break_even_reuses"] = values
     return frame
-
