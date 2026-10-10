@@ -77,3 +77,22 @@ def test_resource_gate_is_valid_kip_terminal_state() -> None:
     ])
     assert not module._resource_aware_success([{"status": "failed"}])
     assert not module._resource_aware_success([])
+
+
+def test_method_partition_keeps_config_order_and_protocol_unchanged() -> None:
+    module = _load_script()
+    config = argparse.Namespace(method_ids=("m1", "m2", "m3", "m4"))
+    assert module._select_methods(config, ["m3", "m1"]) == ["m1", "m3"]
+    assert module._select_methods(config, []) == ["m1", "m2", "m3", "m4"]
+
+
+def test_method_partition_rejects_unknown_or_duplicate_methods() -> None:
+    module = _load_script()
+    config = argparse.Namespace(method_ids=("m1", "m2"))
+    for included in (["m3"], ["m1", "m1"]):
+        try:
+            module._select_methods(config, included)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"Partition không hợp lệ vẫn được chấp nhận: {included}")

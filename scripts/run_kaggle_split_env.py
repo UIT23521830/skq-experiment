@@ -9,6 +9,9 @@ panel trước đó lỗi.
 Script luôn aggregate và đóng gói artifact sau cùng, kể cả khi một method
 ghi trạng thái failure. Trạng thái thật nằm trong ledger và
 ``kaggle_execution_summary.json``; không thay method bằng fallback.
+
+Có thể lặp ``--include-method`` để chia cùng một protocol thành nhiều Kaggle
+job. Danh sách này chỉ lọc lịch chạy, không sửa config hay protocol hash.
 """
 
 from __future__ import annotations
@@ -126,6 +129,22 @@ def _combined_return_code(return_codes: dict[str, int]) -> int:
     return failures[0] if failures else 0
 
 
+def _select_methods(
+    config: ExperimentConfig,
+    included_methods: Sequence[str],
+) -> list[str]:
+    """Lọc lịch chạy nhưng giữ nguyên thứ tự method trong config đã freeze."""
+    if not included_methods:
+        return list(config.method_ids)
+    if len(set(included_methods)) != len(included_methods):
+        raise ValueError("--include-method không được lặp cùng một method")
+    unknown = sorted(set(included_methods) - set(config.method_ids))
+    if unknown:
+        raise ValueError(f"Method không có trong config: {unknown}")
+    selected = set(included_methods)
+    return [method_id for method_id in config.method_ids if method_id in selected]
+
+
 def _freeze() -> str:
     completed = subprocess.run(
         [sys.executable, "-m", "pip", "freeze"],
@@ -225,9 +244,17 @@ def main() -> int:
         "--prepare-autocoreset", action="store_true",
         help="Chạy boundary AutoCoreset trước panel; lỗi vẫn được runner ghi vào ledger.",
     )
+    parser.add_argument(
+        "--include-method", action="append", default=[],
+        help=(
+            "Chỉ chạy method được chỉ định; có thể lặp option. Đây là bộ lọc "
+            "điều phối, không thay đổi config hoặc protocol hash."
+        ),
+    )
     args = parser.parse_args()
 
     config = ExperimentConfig.from_json(args.config)
+    selected_methods = _select_methods(config, args.include_method)
     artifact_root = Path(args.artifact_root).resolve()
     configured_root = config.paths.artifact_root.resolve()
     if artifact_root != configured_root:
@@ -239,7 +266,7 @@ def main() -> int:
     (artifact_root / "environment_panel.txt").write_text(_freeze(), encoding="utf-8")
 
     autocoreset_return_codes: dict[str, int] = {}
-    if args.prepare_autocoreset:
+    if args.prepare_autocoreset and "n_autocoreset_native" in selected_methods:
         datasets = [args.dataset] if args.dataset else list(config.dataset_ids)
         for dataset_id in datasets:
             for seed in config.selector_seeds:
@@ -254,7 +281,7 @@ def main() -> int:
     # Giữ nguyên config để protocol hash của panel và KIP giống nhau. Chỉ cách
     # điều phối thay đổi: mỗi learner là một process cô lập và có thể resume.
     panel_methods = [
-        method_id for method_id in config.method_ids
+        method_id for method_id in selected_methods
         if method_id != "s_kip_tdbench"
     ]
     panel_return_codes = _run_isolated_cells(
@@ -262,31 +289,36 @@ def main() -> int:
     )
     panel_rc = _combined_return_code(panel_return_codes)
 
-    kip_env = dict(os.environ)
-    kip_env["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
-    kip_env["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"
+    kip_selected = "s_kip_tdbench" in selected_methods
     uninstall_rc = None
     install_rc = None
-    if not args.skip_kip_install:
-        uninstall_rc = _run(
-            [sys.executable, "-m", "pip", "uninstall", "-y", *KIP_UNINSTALL],
-            env=kip_env,
+    if kip_selected:
+        kip_env = dict(os.environ)
+        kip_env["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+        kip_env["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"
+        if not args.skip_kip_install:
+            uninstall_rc = _run(
+                [sys.executable, "-m", "pip", "uninstall", "-y", *KIP_UNINSTALL],
+                env=kip_env,
+            )
+            install_rc = _run(
+                [
+                    sys.executable, "-m", "pip", "install", "--no-cache-dir",
+                    *KIP_DISTRIBUTIONS,
+                ],
+                env=kip_env,
+            )
+        verification = _verify_kip_environment(kip_env)
+        (artifact_root / "environment_kip.txt").write_text(
+            _freeze(), encoding="utf-8",
         )
-        install_rc = _run(
-            [
-                sys.executable, "-m", "pip", "install", "--no-cache-dir",
-                *KIP_DISTRIBUTIONS,
-            ],
-            env=kip_env,
+        # Dù panel hoặc verify lỗi, vẫn gọi runner để KIP độc lập và ghi failure.
+        kip_return_codes = _run_isolated_cells(
+            args, config, methods=["s_kip_tdbench"], env=kip_env,
         )
-
-    verification = _verify_kip_environment(kip_env)
-    (artifact_root / "environment_kip.txt").write_text(_freeze(), encoding="utf-8")
-
-    # Dù panel hoặc verify lỗi, vẫn gọi runner để KIP độc lập và failure được ghi.
-    kip_return_codes = _run_isolated_cells(
-        args, config, methods=["s_kip_tdbench"], env=kip_env,
-    )
+    else:
+        verification = {"skipped": True, "reason": "KIP không thuộc partition này"}
+        kip_return_codes = {}
     kip_rc = _combined_return_code(kip_return_codes)
 
     aggregate_rc = _run([
@@ -299,13 +331,16 @@ def main() -> int:
     kip_success = bool(kip_rows) and all(
         row.get("status") == "success" for row in kip_rows
     )
-    kip_resource_aware_success = _resource_aware_success(kip_rows)
+    kip_resource_aware_success = (
+        _resource_aware_success(kip_rows) if kip_selected else True
+    )
     summary = {
         "repository_commit": _git_commit(),
         "config": str(Path(args.config).resolve()),
         "experiment_id": config.experiment_id,
         "dataset": args.dataset or list(config.dataset_ids),
         "strategy": "isolated_method_learner_cells_then_pinned_kip",
+        "selected_methods": selected_methods,
         "autocoreset_return_codes": autocoreset_return_codes,
         "panel_return_code": panel_rc,
         "panel_return_codes": panel_return_codes,

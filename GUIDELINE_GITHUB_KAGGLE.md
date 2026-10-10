@@ -174,6 +174,9 @@ test. Cấu hình v4 chứa đủ 28 phương pháp của panel Adult hiện hà
 Plan full v4 là 28 method × 5 learner và bốn temporal test, tức 560 ledger row.
 Hai `--allowed-parent-source` chỉ mở các parent đã hiện diện trong config và đã
 được khai báo trước; chúng không chọn winner từ CQ và không đọc metric test.
+Với CQ lớn, có thể lặp `--include-method METHOD_ID` để chia 28 method qua nhiều
+Kaggle job. Đây chỉ là bộ lọc lịch chạy: mỗi job vẫn dùng nguyên config và freeze,
+nên protocol hash không đổi. Các partition phải rời nhau và hợp lại đủ 28 method.
 `--prepare-autocoreset` chạy boundary native trước panel; nếu upstream không hoàn
 tất, runner vẫn ghi trạng thái thật thay vì bỏ method. KIP bị resource gate hợp
 lệ không làm mất archive hoặc khiến Save & Run bị đánh lỗi hạ tầng.
