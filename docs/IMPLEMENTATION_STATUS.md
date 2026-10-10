@@ -17,6 +17,7 @@ for method theo thứ tự config:
     elif proposed:
         nạp parent structure đã sinh
         nếu P04/P05/P08/P09: tạo OOF query loss chỉ từ train
+        nếu P10/P11: tạo parent theo shard xác định, đọc đủ train và reduce streaming
         class quota → deterministic coarsening → exact group quota
         → RFF → exact squared-distance herding → simplex-QP
     elif D05:
@@ -48,6 +49,8 @@ aggregate; chỉ sau dev freeze mới được mở test
 | P06 | code + smoke Adult hoàn tất | Gonzalez đúng 1× budget làm candidate; Voronoi theo 128 anchor + QP chỉ đổi trọng số, không đổi index |
 | P07 | code + smoke Adult hoàn tất | Gonzalez tạo pool 2×, SKQ nén về exact budget; pool chỉ là artifact trung gian |
 | P08, P09 | code + smoke Adult hoàn tất | P07 + OOF query loss; s1 dev screen được chạy, confirmatory/test vẫn bắt buộc freeze |
+| P10 | code + invariant test hoàn tất; chờ Adult v4 | CoreTab-XGB theo shard tối đa 10.000 dòng, tối đa 64 parent/shard, SKQ streaming; exact 5%, không proxy |
+| P11 | code + invariant test hoàn tất; chờ Adult v4 | BDIS theo shard rồi union candidate; SKQ streaming; realized=min(5%, candidate), không pad/trùng |
 | D02, D04, D05 | hoàn tất | D02 cần parent; D05 cần source selection cùng run |
 
 ## Không được tuyên bố quá mức
@@ -57,6 +60,9 @@ aggregate; chỉ sau dev freeze mới được mở test
 - P06–P09 là các biến thể đề xuất trong protocol v3 để làm ablation/screening;
   không được ghi là phương pháp SOTA đã xuất bản. Chọn winner phải dùng tiêu chí
   đã khai báo trước trên dev và giữ đầy đủ kết quả của mọi biến thể.
+- P10/P11 là proposed sharded adapter của protocol v4, không phải bản native
+  hoặc tái hiện nguyên paper. Chỉ được kết luận về scale sau khi báo peak RSS,
+  wall time, số shard, shard lớn nhất và xác nhận `all_train_rows_seen=true`.
 - Native CoreTab chạy ở realized size, không phải exact 5%.
 - Gonzalez/Leverage chạy trực tiếp function từ benchmark repo đã khóa; vẫn ghi là
   official-source adapter vì output contract của upstream không trùng contract

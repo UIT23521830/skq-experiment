@@ -49,6 +49,7 @@ class StructuredKQuadSelector(BaseSelector):
         random_within_group: bool = False,
         query_alpha: float = 1.0,
         budget_policy: str = "exact_total",
+        stream_groups: bool = False,
     ):
         super().__init__(seed)
         self.method_id = method_id
@@ -57,6 +58,7 @@ class StructuredKQuadSelector(BaseSelector):
         self.use_qp = bool(use_qp)
         self.random_within_group = bool(random_within_group)
         self.query_alpha = float(query_alpha)
+        self.stream_groups = bool(stream_groups)
         if budget_policy not in {"exact_total", "cap_at_candidate_pool"}:
             raise ValueError(
                 "budget_policy phải là exact_total hoặc cap_at_candidate_pool"
@@ -138,6 +140,10 @@ class StructuredKQuadSelector(BaseSelector):
             rff_components=self.n_components,
             n_classes=len(np.unique(y_train)),
             structured_work_rows=structured_work_rows,
+            streaming_rff_rows=(
+                int(candidate_capacities.max(initial=0))
+                if self.stream_groups else None
+            ),
         )
         enforce_preflight(refined_estimate, kwargs.get("resource_policy"))
 
@@ -148,11 +154,27 @@ class StructuredKQuadSelector(BaseSelector):
             seed=self.seed,
         )
         check = resource_guard.check if resource_guard is not None else None
-        Z = rff.fit_transform(np.asarray(X_train), check=check)
-        kernel_scale = float(np.sqrt(np.mean(np.sum(np.asarray(Z, dtype=np.float64) ** 2, axis=1))))
+        if self.stream_groups and query_features is not None:
+            raise ValueError("stream_groups chưa hỗ trợ query_features")
+        if self.stream_groups:
+            rff.fit(np.asarray(X_train))
+            squared_norm_sum = 0.0
+            batch_size = 65_536
+            for start in range(0, len(X_train), batch_size):
+                stop = min(start + batch_size, len(X_train))
+                block = rff.transform(np.asarray(X_train[start:stop]), check=check)
+                squared_norm_sum += float(
+                    np.sum(np.asarray(block, dtype=np.float64) ** 2)
+                )
+            kernel_scale = float(np.sqrt(squared_norm_sum / len(X_train)))
+            Z = None
+        else:
+            Z = rff.fit_transform(np.asarray(X_train), check=check)
+            kernel_scale = float(np.sqrt(np.mean(np.sum(np.asarray(Z, dtype=np.float64) ** 2, axis=1))))
         if not np.isfinite(kernel_scale) or kernel_scale <= 0:
             raise ValueError("RFF block có train mean-squared norm không hợp lệ")
-        Z = Z / kernel_scale
+        if Z is not None:
+            Z = Z / kernel_scale
         query_scale = None
         if query_features is not None:
             query_features = np.asarray(query_features, dtype=np.float32)
@@ -167,6 +189,7 @@ class StructuredKQuadSelector(BaseSelector):
             if not np.isfinite(query_scale) or query_scale <= 0:
                 raise ValueError("Query block có train mean-squared norm không hợp lệ")
             query_scaled = query_features / query_scale
+            assert Z is not None
             Z = np.concatenate([
                 np.sqrt(alpha) * Z,
                 np.sqrt(1.0 - alpha) * query_scaled,
@@ -181,6 +204,7 @@ class StructuredKQuadSelector(BaseSelector):
         qp_sum_violations: list[float] = []
         qp_min_weights: list[float] = []
         qp_solvers: list[str] = []
+        largest_group_rows = 0
         herding_started = time.perf_counter()
         qp_time = 0.0
         for group, capacity, quota in zip(groups, capacities, quotas):
@@ -188,9 +212,20 @@ class StructuredKQuadSelector(BaseSelector):
                 continue
             full_pool = np.flatnonzero(group_ids == group)
             pool = np.flatnonzero((group_ids == group) & candidate_mask)
+            largest_group_rows = max(largest_group_rows, len(full_pool))
+            if self.stream_groups:
+                group_Z = rff.transform(np.asarray(X_train[full_pool]), check=check)
+                group_Z = group_Z / kernel_scale
+                candidate_local = np.flatnonzero(candidate_mask[full_pool])
             if self.random_within_group:
                 local = self.rng.choice(len(pool), size=int(quota), replace=False)
+            elif self.stream_groups:
+                local = kernel_herding(
+                    group_Z[candidate_local], int(quota), row_ids[pool], self.seed,
+                    check=check,
+                )
             else:
+                assert Z is not None
                 local = kernel_herding(
                     Z[pool], int(quota), row_ids[pool], self.seed, check=check
                 )
@@ -198,9 +233,14 @@ class StructuredKQuadSelector(BaseSelector):
             selected_parts.append(picked)
             if self.use_qp:
                 qp_started = time.perf_counter()
-                solution = solve_simplex_mean_match(
-                    Z[picked], Z[full_pool].mean(axis=0), check=check
-                )
+                if self.stream_groups:
+                    picked_Z = group_Z[candidate_local[local]]
+                    target_Z = group_Z.mean(axis=0)
+                else:
+                    assert Z is not None
+                    picked_Z = Z[picked]
+                    target_Z = Z[full_pool].mean(axis=0)
+                solution = solve_simplex_mean_match(picked_Z, target_Z, check=check)
                 qp_time += time.perf_counter() - qp_started
                 qp_objectives.append(solution.objective)
                 qp_iterations.append(solution.iterations)
@@ -262,7 +302,9 @@ class StructuredKQuadSelector(BaseSelector):
                 "rff_components": self.n_components,
                 "rff_sigma": rff.sigma_,
                 "rff_landmark_row_ids": row_ids[rff.landmark_indices_].astype(np.int64).tolist(),
-                "rff_dtype": str(Z.dtype),
+                "rff_dtype": str(Z.dtype if Z is not None else rff.dtype),
+                "rff_storage_mode": "group_streaming" if self.stream_groups else "global_matrix",
+                "largest_streamed_group_rows": int(largest_group_rows) if self.stream_groups else None,
                 "kernel_block_scale": kernel_scale,
                 "query_block_scale": query_scale,
                 "bandwidth_multiplier": self.bandwidth_multiplier,

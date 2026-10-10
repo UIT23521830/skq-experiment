@@ -38,14 +38,18 @@ def estimate_selection_cost(
     rff_components: int = 256,
     n_classes: int = 2,
     structured_work_rows: float | None = None,
+    streaming_rff_rows: int | None = None,
 ) -> CostEstimate:
-    rff_bytes = int(n_rows * rff_components * 4)
+    rff_storage_rows = n_rows if streaming_rff_rows is None else min(
+        n_rows, max(1, int(streaming_rff_rows))
+    )
+    rff_bytes = int(rff_storage_rows * rff_components * 4)
     base_bytes = int(n_rows * n_features * 4)
     operations = float(n_rows * n_features)
     if method_id == "d05_equal_group_weight":
         # D05 chỉ dùng lại index của source method rồi tính lại trọng số theo group.
         rff_bytes = 0
-    elif method_id.startswith(("p0", "d02", "d04")):
+    elif method_id.startswith(("p", "d02", "d04")):
         operations += float(n_rows * n_features * rff_components)
         # Khi chưa có structure, giữ estimate global bảo thủ. Runner có thể hoãn
         # hạng herding bằng structured_work_rows=0; selector sẽ kiểm lại sau khi

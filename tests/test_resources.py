@@ -59,3 +59,16 @@ def test_d05_does_not_pay_rff_or_herding_estimate() -> None:
     )
     assert estimate.rff_bytes == 0
     assert estimate.estimated_operations == 50_000_000
+
+
+def test_streaming_rff_estimate_uses_bounded_group_storage() -> None:
+    global_estimate = estimate_selection_cost(
+        "p10_skq_mr_coretab_xgb", 5_000_000, 50, 250_000,
+        rff_components=256, n_classes=2,
+    )
+    streaming = estimate_selection_cost(
+        "p10_skq_mr_coretab_xgb", 5_000_000, 50, 250_000,
+        rff_components=256, n_classes=2, streaming_rff_rows=10_000,
+    )
+    assert streaming.rff_bytes == 10_000 * 256 * 4
+    assert streaming.working_bytes < global_estimate.working_bytes

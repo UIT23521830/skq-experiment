@@ -16,6 +16,7 @@ from .controls import StratifiedRandomSelector
 from .diagnostics import build_d02, build_d04
 from .native import AutoCoresetNativeSelector, BDISNativeSelector, CoreTabNativeSelector, CRAIGNativeSelector
 from .proposed.structured_kquad import StructuredKQuadSelector
+from .proposed.sharded_merge_reduce import ShardedMergeReduceSelector
 from .synthetic import TAMEOfficialGenerator, TDBenchGenerator
 
 
@@ -174,6 +175,20 @@ METHOD_SPECS = {
             ),
         ),
         MethodSpec(
+            "p10_skq_mr_coretab_xgb", "SKQ-MR-CoreTab-XGB", "proposed", "implemented",
+            note=(
+                "Đề xuất scale-out: CoreTab-XGB tạo leaf structure theo shard xác định, "
+                "sau đó SKQ streaming cấp exact budget toàn cục; dùng toàn bộ train, không proxy."
+            ),
+        ),
+        MethodSpec(
+            "p11_skq_mr_bdis", "SKQ-MR-BDIS", "proposed", "implemented",
+            note=(
+                "Đề xuất scale-out: BDIS tạo candidate theo shard, SKQ streaming reduce toàn cục; "
+                "giữ realized size khi candidate pool nhỏ, không pad/trùng và không proxy."
+            ),
+        ),
+        MethodSpec(
             "d02_parent_structured_random", "Parent-Structured Random", "ablation", "implemented", True,
             note="Ablation: giữ structure và QP nhưng thay kernel herding bằng random.",
         ),
@@ -250,6 +265,14 @@ def build_selector(method_id: str, seed: int, *, n_components: int = 256, extern
             bandwidth_multiplier=float(options.get("bandwidth_multiplier", 1.0)),
             query_alpha=float(options.get("query_alpha", default_alpha)),
             budget_policy=str(options.get("budget_policy", "exact_total")),
+        )
+    if method_id in {"p10_skq_mr_coretab_xgb", "p11_skq_mr_bdis"}:
+        return ShardedMergeReduceSelector(
+            method_id,
+            repo_root,
+            seed=seed,
+            options=options,
+            n_components=n_components,
         )
     raise RuntimeError(f"Factory chưa có implementation cho {method_id}")
 

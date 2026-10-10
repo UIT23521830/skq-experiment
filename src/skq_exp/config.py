@@ -63,6 +63,14 @@ class ExperimentConfig:
             parent_payload = json.loads(parent_path.read_text(encoding="utf-8"))
             if "extends" in parent_payload:
                 raise ValueError("Chỉ hỗ trợ một tầng extends để config dễ kiểm toán")
+            # method_options là bảng theo method nên config con được phép thêm
+            # method mới mà không phải chép lại toàn bộ protocol cha. Các khóa
+            # của cùng một method vẫn được thay nguyên khối để provenance rõ ràng.
+            if "method_options" in payload:
+                payload["method_options"] = {
+                    **parent_payload.get("method_options", {}),
+                    **payload["method_options"],
+                }
             payload = {**parent_payload, **payload}
         base = config_path.parent.parent
         raw_paths = payload.pop("paths")

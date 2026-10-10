@@ -99,6 +99,22 @@ def test_course_quality_v3_screens_full_portfolio_on_dev_before_temporal_freeze(
     assert plan["evaluation_splits"] == ["dev"]
 
 
+def test_adult_full_v4_adds_sharded_variants_without_changing_p06_p08():
+    v3 = ExperimentConfig.from_json(
+        ROOT / "configs" / "pilot_adult_full_seed11_v3.json"
+    )
+    v4 = ExperimentConfig.from_json(
+        ROOT / "configs" / "pilot_adult_full_seed11_v4.json"
+    )
+    assert len(v4.method_ids) == 28
+    assert {"p10_skq_mr_coretab_xgb", "p11_skq_mr_bdis"} <= set(v4.method_ids)
+    assert v4.method_options["p06_gonzalez_qp"] == v3.method_options["p06_gonzalez_qp"]
+    assert v4.method_options["p08_skq_gonzalez_lrq_sq"] == v3.method_options["p08_skq_gonzalez_lrq_sq"]
+    assert v4.method_options["p10_skq_mr_coretab_xgb"]["shard_rows"] == 10_000
+    plan = _plan(v4)
+    assert plan["cells_planned"] == 140
+
+
 def test_benchmark_selectors_return_exact_unique_indices(tmp_path):
     rng = np.random.default_rng(7)
     X = rng.normal(size=(80, 6))

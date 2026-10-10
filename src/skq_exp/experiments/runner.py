@@ -485,7 +485,12 @@ def _produce_or_block(
         n_classes=len(np.unique(y_train)),
         structured_work_rows=(
             0.0
-            if method_id.startswith(("p0", "d02", "d04", "d05"))
+            if method_id.startswith(("p", "d02", "d04", "d05"))
+            else None
+        ),
+        streaming_rff_rows=(
+            min(len(y_train), int(options.get("shard_rows", len(y_train))))
+            if method_id in {"p10_skq_mr_coretab_xgb", "p11_skq_mr_bdis"}
             else None
         ),
     )

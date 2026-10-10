@@ -23,6 +23,9 @@ OOF query loss để bảo toàn vùng khó của một hoặc nhiều learner m
 dev/test. Protocol v3 bổ sung P06–P09 để kiểm tra riêng đóng góp của coverage
 Gonzalez, QP và query loss; đây là biến thể đề xuất để screening, không phải
 baseline SOTA hay implementation từ một paper khác.
+Protocol v4 giữ nguyên P06/P08 và thêm P10/P11 dạng sharded merge-reduce cho
+dữ liệu lớn: mọi dòng train vẫn được đọc, nhưng parent và RFF/QP chỉ giữ một
+shard/nhóm trong bộ nhớ; không dùng proxy dataset.
 
 Test không được dùng để chọn method hoặc siêu tham số. Config pilot hiện đánh giá
 trên **dev**; kết quả đó chỉ phục vụ kiểm tra code và screening.
@@ -43,6 +46,10 @@ Protocol mở rộng
 nguyên 22 dòng v2 và thêm P06–P09, thành 26 dòng/130 ô ở một seed. Tách config v3
 giúp artifact v2 cũ vẫn tái lập đúng protocol hash; không được trộn kết quả hai
 protocol như thể chúng là cùng một lượt chạy.
+Config
+[`pilot_adult_full_seed11_v4.json`](configs/pilot_adult_full_seed11_v4.json)
+giữ nguyên toàn bộ v3 và thêm P10/P11, thành 28 dòng/140 ô ở một seed. P10/P11
+là proposed adapter để kiểm tra khả năng mở rộng, không phải native CoreTab/BDIS.
 Config [`pilot_course_quality_med_seed11_v3.json`](configs/pilot_course_quality_med_seed11_v3.json)
 mở cùng portfolio 26 dòng cho CourseQuality ở vòng dev screen. Chỉ họ winner đã
 freeze mới được chuyển sang cả bốn temporal test; không dùng test để chọn giữa
@@ -75,6 +82,8 @@ audit, nên chưa phải confirmatory.
 | Proposed screen | `p07_skq_gonzalez` | Gonzalez tạo pool 10%, SKQ nén về exact 5% bằng RFF/herding/QP |
 | Proposed screen | `p08_skq_gonzalez_lrq_sq` | P07 + OOF query loss của LR |
 | Proposed screen | `p09_skq_gonzalez_lrq_mq` | P07 + OOF query loss LR/RF/XGB |
+| Proposed scale-out | `p10_skq_mr_coretab_xgb` | CoreTab-XGB theo shard, gộp leaf nhỏ, SKQ streaming và exact budget toàn cục; không proxy |
+| Proposed scale-out | `p11_skq_mr_bdis` | BDIS candidate theo shard, SKQ streaming; cap theo union candidate, không pad/trùng |
 | Ablation | `d02_parent_structured_random` | Giữ structure/QP, thay herding bằng random trong nhóm |
 | Ablation | `d04_global_rff_quadrature` | Bỏ parent structure, vẫn giữ class/RFF/herding/QP |
 | Ablation | `d05_equal_group_weight` | Giữ index của P05, thay QP bằng trọng số đều trong nhóm |
