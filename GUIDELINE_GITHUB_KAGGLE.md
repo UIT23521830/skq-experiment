@@ -177,6 +177,9 @@ Hai `--allowed-parent-source` chỉ mở các parent đã hiện diện trong co
 Với CQ lớn, có thể lặp `--include-method METHOD_ID` để chia 28 method qua nhiều
 Kaggle job. Đây chỉ là bộ lọc lịch chạy: mỗi job vẫn dùng nguyên config và freeze,
 nên protocol hash không đổi. Các partition phải rời nhau và hợp lại đủ 28 method.
+Khi chạy một notebook liền mạch, nên thêm
+`--autocoreset-timeout-seconds 1800`: boundary AutoCoreset vẫn được thử đúng
+source nhưng không thể giữ toàn bộ panel vô thời hạn trên dữ liệu hàng triệu dòng.
 `--prepare-autocoreset` chạy boundary native trước panel; nếu upstream không hoàn
 tất, runner vẫn ghi trạng thái thật thay vì bỏ method. KIP bị resource gate hợp
 lệ không làm mất archive hoặc khiến Save & Run bị đánh lỗi hạ tầng.

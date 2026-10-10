@@ -50,9 +50,23 @@ RESOURCE_TERMINAL_STATUSES = {
 }
 
 
-def _run(command: Sequence[str], *, env: dict[str, str] | None = None) -> int:
+def _run(
+    command: Sequence[str],
+    *,
+    env: dict[str, str] | None = None,
+    timeout: float | None = None,
+) -> int:
     print("\n$ " + " ".join(command), flush=True)
-    completed = subprocess.run(list(command), env=env, check=False)
+    try:
+        completed = subprocess.run(
+            list(command), env=env, check=False, timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        print(
+            f"Lệnh vượt timeout riêng {timeout}s; tiếp tục các method còn lại.",
+            flush=True,
+        )
+        return 124
     return int(completed.returncode)
 
 
@@ -245,6 +259,13 @@ def main() -> int:
         help="Chạy boundary AutoCoreset trước panel; lỗi vẫn được runner ghi vào ledger.",
     )
     parser.add_argument(
+        "--autocoreset-timeout-seconds", type=float, default=None,
+        help=(
+            "Timeout riêng cho boundary AutoCoreset. Khi vượt ngưỡng, chỉ "
+            "AutoCoreset dừng và panel vẫn tiếp tục."
+        ),
+    )
+    parser.add_argument(
         "--include-method", action="append", default=[],
         help=(
             "Chỉ chạy method được chỉ định; có thể lặp option. Đây là bộ lọc "
@@ -271,12 +292,15 @@ def main() -> int:
         for dataset_id in datasets:
             for seed in config.selector_seeds:
                 key = f"{dataset_id}:ss{seed}"
-                autocoreset_return_codes[key] = _run([
-                    sys.executable, "scripts/run_autocoreset_native.py",
-                    "--config", str(Path(args.config).resolve()),
-                    "--dataset", dataset_id,
-                    "--seed", str(seed),
-                ])
+                autocoreset_return_codes[key] = _run(
+                    [
+                        sys.executable, "scripts/run_autocoreset_native.py",
+                        "--config", str(Path(args.config).resolve()),
+                        "--dataset", dataset_id,
+                        "--seed", str(seed),
+                    ],
+                    timeout=args.autocoreset_timeout_seconds,
+                )
 
     # Giữ nguyên config để protocol hash của panel và KIP giống nhau. Chỉ cách
     # điều phối thay đổi: mỗi learner là một process cô lập và có thể resume.

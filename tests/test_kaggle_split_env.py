@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import subprocess
 from pathlib import Path
 
 
@@ -96,3 +97,13 @@ def test_method_partition_rejects_unknown_or_duplicate_methods() -> None:
             pass
         else:
             raise AssertionError(f"Partition không hợp lệ vẫn được chấp nhận: {included}")
+
+
+def test_boundary_timeout_returns_124_instead_of_stopping_panel(monkeypatch) -> None:
+    module = _load_script()
+
+    def expire(*_args, **_kwargs):
+        raise subprocess.TimeoutExpired(cmd=["boundary"], timeout=10)
+
+    monkeypatch.setattr(module.subprocess, "run", expire)
+    assert module._run(["boundary"], timeout=10) == 124
