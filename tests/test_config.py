@@ -71,3 +71,25 @@ def test_lrq_confirmatory_still_requires_matching_freeze() -> None:
     assert reason is None
     assert provenance["parent_frozen"] is True
     assert provenance["confirmatory_eligible"] is True
+
+
+def test_lrq_temporal_accepts_multiple_predeclared_parent_sources() -> None:
+    root = Path(__file__).parents[1]
+    config = ExperimentConfig.from_json(
+        root / "configs" / "pilot_course_quality_med_temporal_seed11_v4.json"
+    )
+    freeze = {
+        "base_winner_method_id": "p02_skq_coretab_xgb",
+        "base_winner_structure_source": "n02_coretab_xgb_subset",
+        "allowed_parent_sources": ["n02_coretab_xgb_subset", "gonzalez_pool_2x"],
+    }
+    for method_id in (
+        "p04_skq_lrq_sq", "p05_skq_lrq_mq",
+        "p08_skq_gonzalez_lrq_sq", "p09_skq_gonzalez_lrq_mq",
+    ):
+        reason, provenance = _validate_lrq_gate(
+            config, config.method_options[method_id], freeze
+        )
+        assert reason is None
+        assert provenance["parent_frozen"] is True
+        assert provenance["frozen_parent_source"] == config.method_options[method_id]["parent_source"]

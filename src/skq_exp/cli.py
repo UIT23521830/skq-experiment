@@ -96,6 +96,13 @@ def main(argv: list[str] | None = None) -> int:
     freeze.add_argument("--published-reference", required=True)
     freeze.add_argument("--proposed-winner", required=True)
     freeze.add_argument("--selection-basis", required=True)
+    freeze.add_argument(
+        "--allowed-parent-source", action="append", default=[],
+        help=(
+            "Parent source đã được khai báo trước khi mở test; có thể lặp option. "
+            "Mặc định chỉ cho base-winner-structure."
+        ),
+    )
     freeze.add_argument("--overwrite", action="store_true")
     aggregate = sub.add_parser("aggregate")
     aggregate.add_argument("--artifact-root", required=True)
@@ -119,6 +126,7 @@ def main(argv: list[str] | None = None) -> int:
             published_reference=args.published_reference,
             proposed_winner=args.proposed_winner,
             selection_basis=args.selection_basis,
+            allowed_parent_sources=tuple(args.allowed_parent_source),
             overwrite=args.overwrite,
         ))
         return 0

@@ -25,6 +25,7 @@ def create_freeze_manifest(
     published_reference: str,
     proposed_winner: str,
     selection_basis: str,
+    allowed_parent_sources: tuple[str, ...] = (),
     overwrite: bool = False,
 ) -> Path:
     """Ghi manifest schema v3 sau khi kiểm tra method và processed snapshot."""
@@ -43,6 +44,28 @@ def create_freeze_manifest(
     if not selection_basis.strip():
         raise ValueError("Freeze cần selection_basis mô tả nguồn lựa chọn")
 
+    # Một temporal panel có thể chứa nhiều nhánh LRQ đã được khai báo trước,
+    # ví dụ CoreTab-LRQ và Gonzalez-LRQ. Danh sách này chỉ mở đúng các parent
+    # đã có trong config; nó không tự chọn winner và không đọc metric test.
+    configured_parent_sources = {
+        str(options.get("parent_source"))
+        for options in (config.method_options or {}).values()
+        if options.get("parent_source")
+        and not str(options.get("parent_source")).startswith("@")
+    }
+    frozen_parent_sources = tuple(dict.fromkeys(
+        (base_winner_structure_source, *allowed_parent_sources)
+    ))
+    invalid_parent_sources = [
+        source for source in frozen_parent_sources
+        if source not in config.method_ids and source not in configured_parent_sources
+    ]
+    if invalid_parent_sources:
+        raise ValueError(
+            "Freeze chứa parent source không có trong config: "
+            f"{invalid_parent_sources}"
+        )
+
     commit = _git_commit(Path(__file__).resolve().parents[3])
     if commit is None:
         raise RuntimeError("Không đọc được Git commit để khóa freeze manifest")
@@ -59,6 +82,7 @@ def create_freeze_manifest(
         "source_stage_id": config.stage_id,
         "base_winner_method_id": base_winner_method_id,
         "base_winner_structure_source": base_winner_structure_source,
+        "allowed_parent_sources": list(frozen_parent_sources),
         "method_roles": {
             "published_reference": published_reference,
             "proposed_winner": proposed_winner,

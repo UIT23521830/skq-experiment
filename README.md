@@ -280,26 +280,29 @@ Quick config chỉ chạy FullTrain-LR và StratifiedRandom-LR để kiểm tra 
 toàn bộ 2.637.700 dòng train. Nó fit mỗi learner đúng một lần rồi đánh giá cùng
 model trên đủ `test_phase1` đến `test_phase4`; mỗi phase có run/metric riêng và
 `temporal_summary.json` báo mean/worst. Config
-`pilot_course_quality_med_seed11.json` giữ đủ 22 method × 5 learner, nhưng các
-method bậc hai/deep có thể bị resource gate trên tập lớn này; đó là trạng thái
-thực, không được thay bằng fallback.
+`pilot_course_quality_med_temporal_seed11_v4.json` chuyển đầy đủ portfolio Adult
+hiện hành gồm 28 method × 5 learner sang CQ. Các method bậc hai/deep có thể bị
+resource gate trên tập lớn này; đó là trạng thái thực, không được thay bằng
+fallback.
 
 Audit snapshot hiện có overlap user-course giữa train/dev/test. Quick temporal
 run mang `evidence_role=integration_debug_split_overlap_temporal`; metric dùng để
 kiểm tra pipeline, chưa được đưa vào bảng confirmatory. Full config hiện vẫn là
 `s1_screen` nên chỉ đọc dev để chọn/freeze phương pháp. Sau khi tạo
 `artifacts/freeze/freeze_manifest.json` từ screen của chính CourseQuality, chạy
-`pilot_course_quality_med_temporal_seed11.json` để đánh giá ma trận đầy đủ trên
-cả bốn test. Config temporal yêu cầu freeze manifest; P04/P05 không được mở test
-trước bước này. Khi stage là `s2_confirm` hoặc `s4_temporal`, runner bắt buộc
-CourseQuality có và đánh giá đủ bốn test.
+`pilot_course_quality_med_temporal_seed11_v4.json` để đánh giá ma trận đầy đủ
+trên cả bốn test. Config temporal yêu cầu freeze manifest; P04/P05 và P08/P09
+không được mở test trước bước này. Khi stage là `s2_confirm` hoặc `s4_temporal`,
+runner bắt buộc CourseQuality có và đánh giá đủ bốn test.
 
 Nếu dùng cấu hình đã chốt từ Adult thay vì chọn lại trên CQ, tạo freeze chuyển
 giao **trước khi mở CQ test** bằng `skq freeze` và ghi
-`selection_basis=transferred_from_adult_predeclared_before_cq_test`. Đây vẫn chỉ
-là evidence integration vì snapshot CQ hiện có overlap. Lệnh Kaggle full dùng
-`scripts/run_kaggle_split_env.py --prepare-autocoreset`: 22 method × 5 learner ×
-4 test tạo 440 ledger row. Method vượt tài nguyên được giữ dưới trạng thái
+`selection_basis=transferred_full_adult_v4_portfolio_predeclared_before_cq_test`
+và khóa cả `n02_coretab_xgb_subset` lẫn `gonzalez_pool_2x` bằng các option
+`--allowed-parent-source`. Đây vẫn chỉ là evidence integration vì snapshot CQ
+hiện có overlap. Lệnh Kaggle full dùng
+`scripts/run_kaggle_split_env.py --prepare-autocoreset`: 28 method × 5 learner ×
+4 test tạo 560 ledger row. Method vượt tài nguyên được giữ dưới trạng thái
 `predicted_oom`/`predicted_timeout`; không đổi thuật toán hoặc hạ budget 5%.
 
 Các dataset ngoài dùng chung lệnh `prepare-external`. Mỗi dataset có một module

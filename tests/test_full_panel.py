@@ -115,6 +115,19 @@ def test_adult_full_v4_adds_sharded_variants_without_changing_p06_p08():
     assert plan["cells_planned"] == 140
 
 
+def test_course_quality_temporal_v4_runs_28_methods_on_four_tests():
+    config = ExperimentConfig.from_json(
+        ROOT / "configs" / "pilot_course_quality_med_temporal_seed11_v4.json"
+    )
+    plan = _plan(config)
+    assert len(config.method_ids) == 28
+    assert plan["cells_planned"] == 140
+    assert plan["evaluation_splits"] == [
+        "test_phase1", "test_phase2", "test_phase3", "test_phase4",
+    ]
+    assert plan["evaluation_rows_total_per_dataset_seed"] == 560
+
+
 def test_benchmark_selectors_return_exact_unique_indices(tmp_path):
     rng = np.random.default_rng(7)
     X = rng.normal(size=(80, 6))

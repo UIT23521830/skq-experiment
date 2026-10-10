@@ -804,9 +804,15 @@ def _validate_lrq_gate(config, options, freeze_manifest):
     frozen_base = freeze_manifest.get("base_winner_method_id")
     if not frozen_source or not frozen_base:
         return "Freeze manifest thiếu base_winner_method_id/base_winner_structure_source", {}
-    if parent_source != frozen_source:
+    allowed_parent_sources = {
+        str(source) for source in freeze_manifest.get(
+            "allowed_parent_sources", [frozen_source]
+        )
+    }
+    if parent_source not in allowed_parent_sources:
         return (
-            f"LRQ parent_source={parent_source} không khớp frozen source={frozen_source}",
+            f"LRQ parent_source={parent_source} không nằm trong các frozen source="
+            f"{sorted(allowed_parent_sources)}",
             {},
         )
     return None, {
@@ -815,6 +821,7 @@ def _validate_lrq_gate(config, options, freeze_manifest):
         "confirmatory_eligible": True,
         "evaluation_split": "test" if config.stage_id == "s2_confirm" else "dev",
         "frozen_base_winner_method_id": str(frozen_base),
+        "frozen_parent_source": parent_source,
     }
 
 
