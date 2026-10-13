@@ -18,7 +18,7 @@ from pathlib import Path
 from .config import ExperimentConfig
 from .data import fetch_dataset, prepare_dataset, prepare_external_dataset
 from .experiments import run_config, run_smoke
-from .experiments.freeze import create_freeze_manifest
+from .experiments.freeze import create_freeze_manifest, create_freeze_manifest_v4
 from .methods import allowed_learners_for, get_method_spec
 from .reports import aggregate_results
 
@@ -86,7 +86,10 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--max-threads", type=int, help="Số CPU thread tối đa cho learner.")
     run.add_argument(
         "--max-estimated-operations", type=float,
-        help="Không khởi chạy method nếu ước lượng phép tính vượt ngưỡng này.",
+        help=(
+            "Mốc tham chiếu diagnostic cho ước lượng phép tính; không tự loại run. "
+            "Giới hạn thực thi dùng RAM/time guard đo thật."
+        ),
     )
     run.add_argument("--save-model", action="store_true", help="Lưu fitted model; mặc định không lưu.")
     freeze = sub.add_parser("freeze")
@@ -104,6 +107,15 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     freeze.add_argument("--overwrite", action="store_true")
+    freeze_v4 = sub.add_parser(
+        "freeze-v4",
+        help="Tạo M1 freeze bất biến từ config dev và file đặc tả đã duyệt.",
+    )
+    freeze_v4.add_argument("--config", required=True)
+    freeze_v4.add_argument(
+        "--spec", required=True,
+        help="JSON khai báo candidate, winner, rho*, hash evidence và shard policy.",
+    )
     aggregate = sub.add_parser("aggregate")
     aggregate.add_argument("--artifact-root", required=True)
     args = parser.parse_args(argv)
@@ -128,6 +140,35 @@ def main(argv: list[str] | None = None) -> int:
             selection_basis=args.selection_basis,
             allowed_parent_sources=tuple(args.allowed_parent_source),
             overwrite=args.overwrite,
+        ))
+        return 0
+    if args.command == "freeze-v4":
+        spec_path = Path(args.spec)
+        spec = json.loads(spec_path.read_text(encoding="utf-8"))
+        required = {
+            "candidate_list", "selected_candidate", "published_reference",
+            "strongest_baseline", "confirmatory_config_hash", "rho_star",
+            "selection_evidence_hash", "stats_protocol_hash", "shard_policy",
+            "allowed_extensions",
+        }
+        missing = required - set(spec)
+        if missing:
+            raise ValueError(f"Freeze-v4 spec thiếu trường: {sorted(missing)}")
+        print(create_freeze_manifest_v4(
+            config,
+            candidate_list=tuple(spec["candidate_list"]),
+            selected_candidate=str(spec["selected_candidate"]),
+            published_reference=str(spec["published_reference"]),
+            strongest_baseline=str(spec["strongest_baseline"]),
+            confirmatory_config_hash=str(spec["confirmatory_config_hash"]),
+            rho_star=float(spec["rho_star"]),
+            selection_evidence_hash=str(spec["selection_evidence_hash"]),
+            stats_protocol_hash=str(spec["stats_protocol_hash"]),
+            shard_policy=dict(spec["shard_policy"]),
+            allowed_extensions=tuple(spec["allowed_extensions"]),
+            previous_manifest_id=spec.get("previous_manifest_id"),
+            deviations=tuple(spec.get("deviations", ())),
+            plan_version=str(spec.get("plan_version", "2.0.0")),
         ))
         return 0
     if getattr(args, "selector_seed", None):

@@ -366,6 +366,45 @@ chứng confirmatory.
 - `tests/test_statistics.py`: dấu UL/EC, deterministic bootstrap, mismatch course
   và Holm step-down.
 
+### 14/10/2026 — Freeze manifest M1 schema v4
+
+**Xác nhận trực tiếp đã áp dụng**
+
+- Confirmatory chỉ được mở bằng manifest schema v4 ở trạng thái
+  `M1_METHOD_FROZEN`; manifest khóa commit, config, fingerprint dữ liệu, split,
+  feature schema, seed, rho*, learner params, class-weight policy, early stopping,
+  shard policy, phương pháp thắng và protocol thống kê.
+- Candidate list có từ một đến tối đa ba phương pháp. Candidate thắng phải có vai
+  trò `proposed`, runnable và được registry cho phép confirmatory; candidate
+  CoreTab-cell đang chờ duyệt vì vậy không thể được freeze.
+- Manifest là bất biến: lệnh không overwrite file đang có. Mọi thay đổi sau M1
+  phải tạo version/deviation riêng và liên kết `previous_manifest_id`.
+- Runner confirmatory từ chối manifest V3 lịch sử. V3 chỉ còn dùng để đọc lại
+  exploratory/historical run cũ.
+
+**Suy luận triển khai**
+
+- Dùng một file JSON `freeze-v4 --spec` để con người duyệt candidate/winner/hash
+  trước khi chạy lệnh. CLI không tự đọc bảng metric để chọn winner, nhờ đó tránh
+  tạo đường tuning ngầm sau khi nhìn test.
+- Hash review được nhúng cố định theo hai tài liệu đầu vào. `manifest_id` là hash
+  toàn bộ nội dung còn lại; sửa rho*, seed hoặc policy đều làm validation thất bại.
+- `confirmatory_config_hash` được truyền từ config confirmatory đã chuẩn bị nhưng
+  chưa chạy. Đây là suy luận nối hai trạng thái dev-freeze-confirmatory; nó không
+  thay thế evidence lựa chọn trên dev.
+
+**Chưa hoàn tất**
+
+- Chưa thể tạo manifest M1 thật vì CQ v1, candidate được duyệt, rho*, learner
+  params và selection evidence chưa tồn tại. File trong `docs` chỉ là schema/example,
+  không phải freeze hợp lệ và không mở test.
+
+**Bằng chứng cục bộ**
+
+- `tests/test_freeze_v4.py`: round-trip, phát hiện tamper, chặn candidate chưa duyệt
+  và chặn spec CLI thiếu trường.
+- Lệnh dự kiến: `skq freeze-v4 --config <dev-config> --spec <approved-spec.json>`.
+
 **Bằng chứng dự kiến**
 
 - `tests/test_method_fidelity.py`.

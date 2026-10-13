@@ -1001,8 +1001,19 @@ def _load_freeze_manifest(
         manifest = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as error:
         raise RuntimeError(f"Freeze manifest không đọc được: {error!r}") from error
-    if manifest.get("schema_version") != 3:
-        raise RuntimeError("Freeze manifest phải dùng schema_version=3")
+    schema_version = manifest.get("schema_version")
+    if config.evidence_role == "confirmatory":
+        from .freeze import validate_freeze_manifest_v4
+
+        validate_freeze_manifest_v4(manifest, config)
+        return manifest
+    if schema_version not in {3, 4}:
+        raise RuntimeError("Freeze manifest historical chỉ hỗ trợ schema_version 3 hoặc 4")
+    if schema_version == 4:
+        from .freeze import validate_freeze_manifest_v4
+
+        validate_freeze_manifest_v4(manifest, config)
+        return manifest
     required_fields = {"config_hash", "code_commit", "dataset_fingerprints"}
     missing = required_fields - set(manifest)
     if missing:

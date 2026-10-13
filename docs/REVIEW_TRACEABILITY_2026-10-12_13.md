@@ -27,7 +27,7 @@ cáo thực hiện và không được tạo claim học thuật mới.
 | QĐ9/O13 | Review 12–13 | Xác nhận trực tiếp | Dòng gốc là enrollment | CQ protocol | D09 | IN_PROGRESS_DATA_BLOCKED |
 | QĐ10–QĐ11 | Review 12 | Xác nhận trực tiếp | Qc/Yc và UL/EC hai cấp | course metrics | G04 | IN_PROGRESS |
 | QĐ12 | Review 13 | Xác nhận trực tiếp | Headroom chọn rho* trên dev | statistics/config | headroom evidence | IN_PROGRESS |
-| QĐ13/Y8 | Review 13 | Xác nhận trực tiếp | Test mới chỉ mở sau freeze hợp lệ | freeze/runner | G14/G15 | IN_PROGRESS |
+| QĐ13/Y8 | Review 13 | Xác nhận trực tiếp | Test mới chỉ mở sau freeze hợp lệ | `experiments/freeze.py`, `experiments/runner.py`, `cli.py` | `tests/test_freeze_v4.py`; manifest thật còn thiếu | IMPLEMENTED_WAITING_DATA |
 | QĐ14/Y11 | Review 13 | Xác nhận trực tiếp | CoreTab-XGB OVA phải ghi adapted | `methods/adapted` | G12 | IN_PROGRESS |
 | QĐ15/O11/O14 | Review 13 | Xác nhận trực tiếp | Effective weights mean one cho mọi run | weights/evaluator | G06 | IMPLEMENTED_TESTED |
 | O16/Y5 | Review 13 | Xác nhận trực tiếp | Tune một lần, early stopping chỉ dùng dev | learners/evaluator/runner | G08 | IN_PROGRESS |
