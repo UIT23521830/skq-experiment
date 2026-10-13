@@ -35,6 +35,7 @@ cáo thực hiện và không được tạo claim học thuật mới.
 | O4 | Review 12–13 | Xác nhận trực tiếp | Synthetic ra khỏi phần chính | config/registry | G00 | PLANNED |
 | O5 | Review 12–13 | Xác nhận trực tiếp | Bổ sung sáu baseline | method adapters | G10 | PLANNED |
 | Y1–Y3/Y6–Y10/Y12–Y16 | Review 12–13 | Xác nhận trực tiếp | Số liệu, tên, seed, owner, reporting | registry/reports/docs | G16 | PLANNED |
+| G16/TRACE-01 | V2 §19/§23 | Suy luận triển khai theo review | Evidence và claim phải truy được run/config/split/commit, không chỉ báo cáo tay | `reports/evidence.py`, `scripts/audit_claim_ledger.py` | `tests/test_evidence_ledger.py`; evidence thật còn thiếu | IMPLEMENTED_WAITING_RUNS |
 | INF-01 | V2 §13.3 | Suy luận triển khai | CoreTab-cell chỉ là candidate disabled chờ duyệt | registry | metadata test | IN_PROGRESS |
 | INF-02 | V2 §12 | Suy luận triển khai | Dùng prediction interval khi calibration | calibration | calibration tests | PLANNED |
 | INF-03 | V2 §20 | Suy luận triển khai | Audit cả Git history, không chỉ working tree | audit script | privacy evidence | IMPLEMENTED_FINDINGS |

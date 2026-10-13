@@ -405,6 +405,44 @@ chứng confirmatory.
   và chặn spec CLI thiếu trường.
 - Lệnh dự kiến: `skq freeze-v4 --config <dev-config> --spec <approved-spec.json>`.
 
+### 14/10/2026 — Evidence Manifest và Claim Ledger G16
+
+**Xác nhận trực tiếp đã áp dụng**
+
+- Evidence có ID ổn định, requirement IDs, commit, config/split hash, run IDs,
+  artifact SHA-256, visibility, producer command và status. Evidence đã ghi không
+  được overwrite.
+- Claim empirical phải trỏ tới ô bảng/hình, khóa dòng trong `runs_long`, run IDs,
+  provenance và evidence IDs; một file nhận xét thủ công không đủ làm evidence.
+- Claim `supported` chỉ hợp lệ khi mọi evidence có status `pass` và bao phủ toàn
+  bộ run ID của claim. Audit giữ riêng từng finding, không gộp hoặc che lỗi.
+- Manifest public chỉ ghi label và SHA-256; đường dẫn/nội dung artifact mức dòng
+  không được chép vào ledger public.
+
+**Suy luận triển khai**
+
+- Mỗi claim là một JSON bất biến thay vì một bảng duy nhất có thể bị sửa âm thầm.
+  `record_id` hash toàn nội dung và audit lại semantic gate, kể cả record được tạo
+  ngoài API.
+- Cho phép evidence trạng thái `fail`, `blocked`, `partial`, `not_run` để lưu đúng
+  thất bại; các trạng thái này không thể nâng claim thành `supported`.
+- Tool audit không đọc nội dung artifact private, chỉ xác minh manifest, liên kết
+  evidence và hash đã khai báo. Đây là lựa chọn giảm nguy cơ rò dữ liệu.
+
+**Chưa hoàn tất**
+
+- Chưa có evidence/run CQ v1 thật và chưa tạo claim kết quả nào. Hai file example
+  chỉ mô tả schema, không phải bằng chứng.
+- Aggregate runner chưa tự phát hành evidence; bước nối tự động chỉ thực hiện sau
+  khi schema CQ v1 và danh sách endpoint M0 được khóa.
+
+**Bằng chứng cục bộ**
+
+- `tests/test_evidence_ledger.py`: bất biến, không lộ path private, bao phủ run,
+  evidence status và phát hiện record bị sửa.
+- `scripts/audit_claim_ledger.py --artifact-root <root>` trả exit code khác 0 khi
+  có finding.
+
 **Bằng chứng dự kiến**
 
 - `tests/test_method_fidelity.py`.
