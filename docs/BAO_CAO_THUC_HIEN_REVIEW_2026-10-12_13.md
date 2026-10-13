@@ -321,6 +321,22 @@ chứng confirmatory.
 - `tests/test_coretab_ova.py`: quota, positive filtering, thiếu realized, seed và
   chặn binary contract.
 
+### 14/10/2026 — Quy tắc headroom rho* trên dev
+
+**Xác nhận trực tiếp đã áp dụng**
+
+- Chỉ nhận UL dev của FullTrain-B và C02 tại rho 0,5/1/2/5%, đúng ba seed
+  11/29/47; thiếu ratio/seed hoặc metric ngoài [0,1] bị chặn.
+- Chọn rho lớn nhất có `UL(FullTrain-B)-mean(C02)>=0,01`; không mức nào đạt thì
+  rho*=0,5%. Nếu rho* khác 5%, 5% được ghi secondary descriptive.
+- Decision artifact tự khai báo `evidence_split=dev` và allowed inputs, không có
+  tham số để truyền metric SKQ/baseline/test.
+
+**Chưa hoàn tất**
+
+- Chưa có 13 fit thật trên CQ v1 (1 FullTrain-B + 4×3 C02) nên QĐ12 vẫn
+  `IN_PROGRESS`; code toy không được dùng để khóa rho*.
+
 **Bằng chứng dự kiến**
 
 - `tests/test_method_fidelity.py`.
