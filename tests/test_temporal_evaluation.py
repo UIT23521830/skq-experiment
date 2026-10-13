@@ -18,10 +18,12 @@ class _CountingLearner:
         self.fit_calls = 0
         self.predict_calls = 0
         self.predict_proba_calls = 0
+        self.sample_weight = None
 
     def fit(self, X, y, sample_weight=None):
-        del X, y, sample_weight
+        del X, y
         self.fit_calls += 1
+        self.sample_weight = np.asarray(sample_weight)
         return self
 
     def predict(self, X):
@@ -65,6 +67,8 @@ def test_one_fitted_model_is_reused_for_four_temporal_splits(monkeypatch):
     monkeypatch.setattr(
         evaluator_module, "build_learner", lambda *args, **kwargs: learner,
     )
+    # Unit test không phụ thuộc thời gian khởi tạo CUDA/Torch của máy chạy test.
+    monkeypatch.setattr(evaluator_module, "_peak_vram_bytes", lambda: 0)
     X_train = np.asarray([[-2.0], [-1.0], [1.0], [2.0]], dtype=np.float32)
     y_train = np.asarray([0, 0, 1, 1], dtype=np.int64)
     selection = SelectionResult(
@@ -93,5 +97,10 @@ def test_one_fitted_model_is_reused_for_four_temporal_splits(monkeypatch):
     assert learner.fit_calls == 1
     assert learner.predict_calls == 4
     assert learner.predict_proba_calls == 4
+    assert learner.sample_weight.mean() == pytest.approx(1.0)
     assert all(cost["fit_shared_across_evaluation_splits"] for cost in costs)
     assert all(cost["evaluation_split_count"] == 4 for cost in costs)
+    assert all(
+        cost["effective_sample_weight"]["mean"] == pytest.approx(1.0)
+        for cost in costs
+    )

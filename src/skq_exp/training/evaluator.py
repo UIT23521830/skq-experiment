@@ -18,7 +18,11 @@ from ..methods.result import SelectionResult
 from ..methods.synthetic.result import GeneratedDatasetResult
 from .learners import build_learner
 from .metrics import compute_all_metrics
-from .weights import balanced_class_weights, effective_sample_weights
+from .weights import (
+    balanced_class_weights,
+    effective_sample_weights,
+    sample_weight_diagnostics,
+)
 
 
 @dataclass
@@ -68,6 +72,7 @@ def fit_selection_learner(
         full_train_rows=len(y_train),
         selection_breakdown=selection.timings,
         passes_over_train=selection.diagnostics.get("passes_over_train"),
+        sample_weight_summary=sample_weight_diagnostics(sample_weight),
     )
 
 
@@ -108,6 +113,7 @@ def fit_generated_learner(
         full_train_rows=len(y_full_train),
         selection_breakdown=generated.timings,
         passes_over_train=generated.diagnostics.get("passes_over_train"),
+        sample_weight_summary=sample_weight_diagnostics(sample_weight),
     )
 
 
@@ -191,6 +197,7 @@ def _fit_learner(
     full_train_rows: int,
     selection_breakdown: dict[str, Any],
     passes_over_train: Any,
+    sample_weight_summary: dict[str, float | int],
 ) -> FittedLearner:
     learner = build_learner(
         learner_id,
@@ -229,6 +236,7 @@ def _fit_learner(
         "compression_ratio": float(realized_rows / full_train_rows),
         "selection_breakdown_seconds": selection_breakdown,
         "passes_over_train": passes_over_train,
+        "effective_sample_weight": sample_weight_summary,
     }
     return FittedLearner(model=learner, labels=labels, base_cost=base_cost)
 

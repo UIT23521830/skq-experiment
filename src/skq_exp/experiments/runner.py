@@ -34,7 +34,13 @@ from ..methods.proposed.allocation import make_group_ids
 from ..methods.proposed.query_losses import make_oof_query_losses
 from ..methods.result import SelectionResult
 from ..methods.synthetic.result import GeneratedDatasetResult
-from ..resources import ResourceGuard, ResourceLimitError, enforce_preflight, estimate_selection_cost
+from ..resources import (
+    ResourceGuard,
+    ResourceLimitError,
+    enforce_preflight,
+    estimate_selection_cost,
+    operation_diagnostics,
+)
 from ..training import (
     evaluate_fitted_learner,
     fit_generated_learner,
@@ -494,8 +500,13 @@ def _produce_or_block(
             else None
         ),
     )
+    resource_policy = config.resource or {}
+    resource_diagnostics = {
+        "estimated_working_bytes": int(estimate.working_bytes),
+        **operation_diagnostics(estimate, resource_policy),
+    }
     try:
-        enforce_preflight(estimate, config.resource)
+        enforce_preflight(estimate, resource_policy)
     except ResourceLimitError as error:
         failure = _failure_for_kind(
             spec.output_kind, method_id, error.status, requested, str(error)
@@ -506,17 +517,27 @@ def _produce_or_block(
             "resource_status": error.status,
             "estimated_working_bytes": int(estimate.working_bytes),
             "estimated_operations": float(estimate.estimated_operations),
-            "configured_max_ram_gb": float(config.resource.get("max_ram_gb", 8.0)),
+            "configured_max_ram_gb": float(resource_policy.get("max_ram_gb", 8.0)),
             "configured_max_estimated_operations": float(
-                config.resource.get("max_estimated_operations", 50_000_000_000)
+                resource_policy.get("max_estimated_operations", 50_000_000_000)
             ),
         })
         return failure
-    guard = ResourceGuard(config.resource)
+    guard = ResourceGuard(resource_policy)
     if spec.output_kind == "synthetic":
         try:
             generator = build_generator(method_id, seed, external_root=config.paths.external_root, options=options)
-            return generator.generate(X_train, y_train, config.budget_ratio, resource_guard=guard)
+            generated = generator.generate(
+                X_train, y_train, config.budget_ratio, resource_guard=guard,
+            )
+            generated.diagnostics.update(resource_diagnostics)
+            return generated
+        except ResourceLimitError as error:
+            failure = GeneratedDatasetResult.failure(
+                method_id, error.status, requested, str(error),
+            )
+            failure.diagnostics.update(resource_diagnostics)
+            return failure
         except Exception as error:
             return GeneratedDatasetResult.failure(method_id, "failed", requested, repr(error))
     if method_id == "d05_equal_group_weight":
@@ -533,7 +554,9 @@ def _produce_or_block(
         if isinstance(parent_result, str):
             return SelectionResult.failure(method_id, "blocked", requested, parent_result)
         group_ids = make_group_ids(parent_result.get("parent_ids"), y_train)
-        return equal_group_weights(base, group_ids)
+        result = equal_group_weights(base, group_ids)
+        result.diagnostics.update(resource_diagnostics)
+        return result
     try:
         selector = build_selector(
             method_id, seed, external_root=config.paths.external_root,
@@ -604,7 +627,10 @@ def _produce_or_block(
     try:
         result = selector.select(X_train, y_train, config.budget_ratio, **kwargs)
     except ResourceLimitError as error:
-        return SelectionResult.failure(method_id, error.status, requested, str(error))
+        failure = SelectionResult.failure(method_id, error.status, requested, str(error))
+        failure.diagnostics.update(resource_diagnostics)
+        return failure
+    result.diagnostics.update(resource_diagnostics)
     if result.status == "success" and spec.needs_parent:
         own_total = float(result.timings.get("total", 0.0))
         parent_total = float(np.asarray(structure.get("_producer_total_seconds", 0.0)).item())

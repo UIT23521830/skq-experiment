@@ -34,6 +34,33 @@ chứng confirmatory.
   chấp thuận.
 - Thêm `.editorconfig` UTF-8 để docstring tiếng Việt nhất quán Windows/Kaggle.
 
+### 14/10/2026 — Chuẩn hóa trọng số và tách operation khỏi gate
+
+**Xác nhận trực tiếp đã áp dụng**
+
+- Effective sample weight của FullTrain, subset thật và synthetic được chuẩn hóa
+  mean bằng 1 sau khi nhân method weight với class weight.
+- Số phép tính ước lượng chỉ còn là diagnostic; vượt ngưỡng cũ không tạo
+  `predicted_timeout`.
+- `predicted_oom`, `oom` và `timeout` vẫn là ba trạng thái riêng: RAM dự báo vẫn
+  có thể chặn trước, còn RSS/thời gian thật được ResourceGuard kiểm tra khi chạy.
+
+**Suy luận triển khai**
+
+- Giữ khóa `max_estimated_operations` cũ để đọc được config lịch sử, nhưng đổi
+  tên ý nghĩa trong evidence thành `legacy_reference_operations` và ghi rõ
+  `decision_role=diagnostic_only`. Việc này tương thích ngược, không biến ngưỡng
+  cũ thành tiêu chí loại mẫu.
+- Chỉ ghi thống kê count/min/max/mean/sum/zero_count của weight vào cost artifact,
+  không nhân bản cả vector trọng số trong bảng metric.
+
+**Bằng chứng cục bộ**
+
+- `tests/test_weights.py`: kiểm tra mean=1 và bất biến với phép nhân toàn cục.
+- `tests/test_resources.py`: kiểm tra operation vượt mốc cũ vẫn được phép chạy.
+- `tests/test_temporal_evaluation.py`: kiểm tra weight thực sự truyền vào learner
+  và metadata cost đều có mean=1.
+
 **Bằng chứng dự kiến**
 
 - `tests/test_method_fidelity.py`.

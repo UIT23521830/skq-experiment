@@ -1,12 +1,17 @@
-"""Các test này kiểm tra method quá lớn bị chặn trước khi chiếm RAM hoặc CPU.
+"""Các test này kiểm tra gate RAM và chẩn đoán số phép tính.
 
-Ước lượng không thay thế benchmark thật, nhưng phải bảo thủ và có thể cấu hình.
-Run vượt ngưỡng được ghi trạng thái dự báo thay vì làm máy treo.
+Ước lượng không thay thế benchmark thật. RAM dự báo vẫn là gate an toàn, còn số
+phép tính chỉ để chẩn đoán và không được loại run theo Review 12–13.
 """
 
 import pytest
 
-from skq_exp.resources import ResourceLimitError, enforce_preflight, estimate_selection_cost
+from skq_exp.resources import (
+    ResourceLimitError,
+    enforce_preflight,
+    estimate_selection_cost,
+    operation_diagnostics,
+)
 
 
 def test_preflight_blocks_memory_heavy_run() -> None:
@@ -19,13 +24,15 @@ def test_preflight_blocks_memory_heavy_run() -> None:
     assert caught.value.status == "predicted_oom"
 
 
-def test_preflight_blocks_operation_heavy_run() -> None:
+def test_operation_estimate_is_diagnostic_not_a_gate() -> None:
     estimate = estimate_selection_cost(
         "a_craig_feature_space", 1_000, 20, 1_000, rff_components=1, n_classes=10
     )
-    with pytest.raises(ResourceLimitError) as caught:
-        enforce_preflight(estimate, {"max_ram_gb": 128, "max_estimated_operations": 1e6})
-    assert caught.value.status == "predicted_timeout"
+    policy = {"max_ram_gb": 128, "max_estimated_operations": 1e6}
+    enforce_preflight(estimate, policy)
+    diagnostics = operation_diagnostics(estimate, policy)
+    assert diagnostics["exceeds_legacy_reference"] is True
+    assert diagnostics["decision_role"] == "diagnostic_only"
 
 
 def test_kip_memory_estimate_includes_target_kernel_and_gradients() -> None:

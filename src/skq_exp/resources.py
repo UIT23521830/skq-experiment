@@ -1,9 +1,9 @@
 """File này ước lượng chi phí trước khi chạy và theo dõi tài nguyên trong selector.
 
-Nếu số phép tính hoặc bộ nhớ dự kiến vượt mức người dùng đặt, run được ghi
-`predicted_oom` hoặc `predicted_timeout` mà không khởi động phần nặng. Với code
-SKQ nội bộ, guard còn kiểm tra thời gian và RAM giữa các batch/vòng lặp để dừng an
-toàn trước khi máy bị chiếm hết tài nguyên.
+Bộ nhớ dự kiến vẫn có thể chặn run bằng `predicted_oom`. Số phép tính chỉ là chỉ
+báo chẩn đoán, không được dùng làm gate loại run theo QĐ16/O8/O15 của Review
+12–13. Với code SKQ nội bộ, guard kiểm tra thời gian và RSS thật giữa các
+batch/vòng lặp để dừng an toàn bằng trạng thái `timeout` hoặc `oom` riêng biệt.
 """
 
 from __future__ import annotations
@@ -89,7 +89,6 @@ def estimate_selection_cost(
 def enforce_preflight(estimate: CostEstimate, policy: dict[str, Any] | None) -> None:
     policy = policy or {}
     max_ram_gb = float(policy.get("max_ram_gb", 8.0))
-    max_ops = float(policy.get("max_estimated_operations", 50_000_000_000))
     available = psutil.virtual_memory().available
     configured = int(max_ram_gb * 1024 ** 3)
     allowed = min(configured, int(available * 0.75))
@@ -99,11 +98,23 @@ def enforce_preflight(estimate: CostEstimate, policy: dict[str, Any] | None) -> 
             f"Ước lượng {estimate.working_bytes / 1024**3:.2f} GiB vượt mức an toàn "
             f"{allowed / 1024**3:.2f} GiB",
         )
-    if estimate.estimated_operations > max_ops:
-        raise ResourceLimitError(
-            "predicted_timeout",
-            f"Ước lượng {estimate.estimated_operations:.3g} phép tính vượt ngưỡng {max_ops:.3g}",
-        )
+
+
+def operation_diagnostics(
+    estimate: CostEstimate,
+    policy: dict[str, Any] | None,
+) -> dict[str, float | bool | str]:
+    """Ghi estimate phép tính để audit; kết quả này tuyệt đối không phải gate."""
+    policy = policy or {}
+    reference = float(policy.get("max_estimated_operations", 50_000_000_000))
+    ratio = estimate.estimated_operations / reference if reference > 0 else float("inf")
+    return {
+        "estimated_operations": float(estimate.estimated_operations),
+        "legacy_reference_operations": reference,
+        "ratio_to_legacy_reference": float(ratio),
+        "exceeds_legacy_reference": bool(estimate.estimated_operations > reference),
+        "decision_role": "diagnostic_only",
+    }
 
 
 class ResourceGuard:

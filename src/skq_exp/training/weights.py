@@ -2,7 +2,8 @@
 
 Nó xác nhận trọng số thẳng hàng với dòng được chọn, hữu hạn, không âm và còn tổng
 dương. Class weight được tính từ full train rồi nhân với method weight; không tính
-lại từ coreset vì việc đó sẽ thay đổi mục tiêu giữa các phương pháp.
+lại từ coreset vì việc đó sẽ thay đổi mục tiêu giữa các phương pháp. Trọng số hiệu
+dụng cuối cùng luôn được chuẩn hóa về mean=1 theo QĐ15/O11/O14 của Review 13.
 """
 
 from __future__ import annotations
@@ -30,5 +31,22 @@ def effective_sample_weights(
     result = method_weights * multipliers
     if np.any(result < 0) or not np.all(np.isfinite(result)) or result.sum() <= 0:
         raise ValueError("effective sample weight không hợp lệ")
-    return result
+    # Chuẩn hóa chỉ đổi thang chung của loss, không đổi tỷ lệ tương đối giữa mẫu.
+    # Mean=1 giúp FullTrain, subset thật và synthetic dùng cùng một quy ước loss.
+    return result * (len(result) / result.sum())
+
+
+def sample_weight_diagnostics(weights: np.ndarray) -> dict[str, float | int]:
+    """Trả thống kê có thể audit mà không ghi toàn bộ vector trọng số."""
+    values = np.asarray(weights, dtype=np.float64)
+    if values.ndim != 1 or len(values) == 0:
+        raise ValueError("weights phải là vector một chiều không rỗng")
+    return {
+        "count": int(len(values)),
+        "min": float(values.min()),
+        "max": float(values.max()),
+        "mean": float(values.mean()),
+        "sum": float(values.sum()),
+        "zero_count": int(np.count_nonzero(values == 0)),
+    }
 
