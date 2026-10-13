@@ -591,6 +591,8 @@ def _produce_or_block(
         "resource_guard": guard,
         "resource_policy": config.resource,
     }
+    if "phase_train" in data:
+        kwargs["phases"] = np.asarray(data["phase_train"])
     structure = None
     if spec.needs_parent:
         parent_source = str(options.get("parent_source", ""))

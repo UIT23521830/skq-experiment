@@ -29,3 +29,11 @@ def test_pending_coretab_multiclass_candidate_is_disabled() -> None:
     assert spec.confirmatory_allowed is False
     assert spec.task_contract == "multiclass"
 
+
+def test_c01_c03_are_controls_not_proposed_methods() -> None:
+    for method_id in ("c01_uniform_random", "c03_phase_class_random"):
+        spec = METHOD_SPECS[method_id]
+        assert spec.role == "control"
+        assert spec.fidelity_tier == "local_reimplementation"
+        assert spec.confirmatory_allowed is True
+

@@ -79,3 +79,91 @@ class StratifiedRandomSelector(BaseSelector):
             },
             timings={"select": time.perf_counter() - started},
         )
+
+
+class UniformRandomSelector(BaseSelector):
+    """C01: lấy mẫu đều không hoàn lại với exact budget."""
+
+    method_id = "c01_uniform_random"
+
+    def select(
+        self, X_train: np.ndarray, y_train: np.ndarray, budget_ratio: float, **kwargs,
+    ) -> SelectionResult:
+        del kwargs
+        self.validate_input(X_train, y_train, budget_ratio)
+        started = time.perf_counter()
+        requested = exact_budget_size(len(y_train), budget_ratio)
+        indices = validate_exact_selection(
+            self.rng.choice(len(y_train), size=requested, replace=False),
+            len(y_train), requested,
+        )
+        return SelectionResult(
+            indices=indices,
+            weights=np.ones(requested, dtype=np.float64),
+            requested_rows=requested,
+            realized_rows=requested,
+            budget_mode="exact_total",
+            method_id=self.method_id,
+            diagnostics={"sampling": "uniform_without_replacement"},
+            timings={"select": time.perf_counter() - started},
+        )
+
+
+class PhaseClassStratifiedRandomSelector(BaseSelector):
+    """C03: random theo phase × class, weight bảo toàn mass từng tầng."""
+
+    method_id = "c03_phase_class_random"
+
+    def select(
+        self, X_train: np.ndarray, y_train: np.ndarray, budget_ratio: float, **kwargs,
+    ) -> SelectionResult:
+        self.validate_input(X_train, y_train, budget_ratio)
+        requested = exact_budget_size(len(y_train), budget_ratio)
+        phases = kwargs.get("phases")
+        if phases is None:
+            return SelectionResult.failure(
+                self.method_id, "blocked", requested,
+                "C03 cần phase_train của Pool B; không fallback sang C02",
+            )
+        phases = np.asarray(phases)
+        if phases.shape != np.asarray(y_train).shape:
+            return SelectionResult.failure(
+                self.method_id, "blocked", requested,
+                "phase_train không thẳng hàng với y_train",
+            )
+        started = time.perf_counter()
+        keys = np.asarray([f"{phase}\x1f{label}" for phase, label in zip(phases, y_train)])
+        strata, inverse, counts = np.unique(keys, return_inverse=True, return_counts=True)
+        quotas = allocate_largest_remainder(counts, requested, ensure_one=True)
+        selected: list[int] = []
+        weights: list[float] = []
+        for stratum_index, (capacity, quota) in enumerate(zip(counts, quotas)):
+            pool = np.flatnonzero(inverse == stratum_index)
+            chosen = self.rng.choice(pool, size=int(quota), replace=False)
+            selected.extend(chosen.tolist())
+            weights.extend([float(capacity / quota)] * int(quota))
+        indices = np.asarray(selected, dtype=np.int64)
+        method_weights = np.asarray(weights, dtype=np.float64)
+        order = self.rng.permutation(len(indices))
+        indices = validate_exact_selection(indices[order], len(y_train), requested)
+        method_weights = method_weights[order]
+        realized_mass = np.bincount(
+            inverse[indices], weights=method_weights, minlength=len(strata),
+        )
+        if not np.allclose(realized_mass, counts):
+            raise RuntimeError("C03 không bảo toàn mass phase × class")
+        return SelectionResult(
+            indices=indices,
+            weights=method_weights,
+            requested_rows=requested,
+            realized_rows=requested,
+            budget_mode="exact_total",
+            method_id=self.method_id,
+            diagnostics={
+                "strata": strata.tolist(),
+                "stratum_capacities": counts.tolist(),
+                "stratum_quotas": quotas.tolist(),
+                "stratum_mass_error_max": float(np.max(np.abs(realized_mass - counts))),
+            },
+            timings={"select": time.perf_counter() - started},
+        )

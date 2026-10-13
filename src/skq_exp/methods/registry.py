@@ -12,7 +12,11 @@ from pathlib import Path
 from typing import Any
 
 from .benchmark import GonzalezBenchmarkSelector, LeverageBenchmarkSelector
-from .controls import StratifiedRandomSelector
+from .controls import (
+    PhaseClassStratifiedRandomSelector,
+    StratifiedRandomSelector,
+    UniformRandomSelector,
+)
 from .diagnostics import build_d02, build_d04
 from .native import AutoCoresetNativeSelector, BDISNativeSelector, CoreTabNativeSelector, CRAIGNativeSelector
 from .proposed.structured_kquad import StructuredKQuadSelector
@@ -68,12 +72,24 @@ METHOD_SPECS = {
             note="Mốc trần dùng toàn bộ train; không phải phương pháp nén.",
         ),
         MethodSpec(
+            "c01_uniform_random", "Uniform Random", "control", "implemented",
+            fidelity_tier="local_reimplementation", task_contract="task_agnostic",
+            budget_contract="exact", evidence_role="confirmatory",
+            note="C01: exact-budget uniform sampling, không hoàn lại.",
+        ),
+        MethodSpec(
             "c02_stratified_random", "Stratified Random", "control", "implemented",
             allowed_learners=("xgb",),
             note=(
                 "Control cổ điển: subset thật, exact budget. Contract cũ chỉ chạy XGBoost; "
                 "config full-v2 ghi đè rõ ràng để đánh giá đủ năm learner."
             ),
+        ),
+        MethodSpec(
+            "c03_phase_class_random", "Phase×Class Stratified Random", "control", "implemented",
+            fidelity_tier="local_reimplementation", task_contract="multiclass",
+            budget_contract="exact", evidence_role="confirmatory",
+            note="C03: exact budget theo phase×class, w=|Pg|/mg bảo toàn mass.",
         ),
         MethodSpec(
             "n01_coretab_dt_subset", "CoreTab-DT Official", "native", "implemented",
@@ -295,6 +311,10 @@ def build_selector(method_id: str, seed: int, *, n_components: int = 256, extern
     repo_root = Path(external_root or "external/repos")
     if method_id == "c02_stratified_random":
         return StratifiedRandomSelector(seed)
+    if method_id == "c01_uniform_random":
+        return UniformRandomSelector(seed)
+    if method_id == "c03_phase_class_random":
+        return PhaseClassStratifiedRandomSelector(seed)
     if method_id in {"n01_coretab_dt_subset", "n02_coretab_xgb_subset"}:
         return CoreTabNativeSelector(method_id, repo_root, seed, options)
     if method_id == "n_bdis_native":

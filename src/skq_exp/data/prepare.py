@@ -199,6 +199,9 @@ def load_processed(dataset_id: str, processed_root: str | Path, mmap: bool = Tru
         selector_path = root / f"X_selector_{split}.npy"
         if selector_path.exists():
             result[f"X_selector_{split}"] = np.load(selector_path, mmap_mode=mode)
+        phase_path = root / f"phase_{split}.npy"
+        if phase_path.exists():
+            result[f"phase_{split}"] = np.load(phase_path, mmap_mode=mode)
     result["split_manifest"] = json.loads((root / "split_manifest.json").read_text(encoding="utf-8"))
     feature_contract_path = root / "feature_contract.json"
     result["feature_contract"] = (

@@ -269,6 +269,28 @@ chứng confirmatory.
 
 - `tests/test_course_metrics.py`: schema private, UL/P1, PCC/EC, n_min và thứ tự mu.
 
+### 14/10/2026 — Controls C01 và C03
+
+**Xác nhận trực tiếp đã áp dụng**
+
+- C01 lấy uniform random không hoàn lại, exact budget.
+- C03 phân tầng `(phase, class)`, quota largest remainder và method weight
+  `|P_g|/m_g`; test xác nhận mass từng tầng được bảo toàn trong sai số số thực.
+- C01/C03 mang vai trò `control`, không phải phương pháp đề xuất và không claim
+  tái hiện paper.
+- C03 thiếu `phase_train` trả `blocked` kèm lý do; không fallback thành C02.
+
+**Suy luận triển khai**
+
+- `phase_train.npy` là artifact tách riêng thay vì nhét phase vào tọa độ feature.
+  Runner chỉ truyền phase như metadata selector, còn learner/selector matrices giữ
+  contract feature riêng.
+
+**Chưa hoàn tất**
+
+- CQ v1 adapter chưa sinh `phase_train.npy`; vì vậy C03 mới được xác nhận bằng toy
+  contract, chưa có evidence D07 trên Pool B thật.
+
 **Bằng chứng dự kiến**
 
 - `tests/test_method_fidelity.py`.

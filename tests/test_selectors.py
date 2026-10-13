@@ -7,7 +7,11 @@ thay đổi làm trùng index, mất lớp hoặc sai tổng khối lượng, te
 import numpy as np
 
 from skq_exp.data.toy import make_toy_data
-from skq_exp.methods.controls import StratifiedRandomSelector
+from skq_exp.methods.controls import (
+    PhaseClassStratifiedRandomSelector,
+    StratifiedRandomSelector,
+    UniformRandomSelector,
+)
 from skq_exp.methods.proposed.structured_kquad import StructuredKQuadSelector
 from skq_exp.methods.proposed.herding import kernel_herding
 
@@ -20,6 +24,31 @@ def test_stratified_random_exact_and_deterministic() -> None:
     assert len(first.indices) == round(len(data["y_train"]) * 0.05)
     assert np.array_equal(first.indices, second.indices)
     assert len(np.unique(data["y_train"][first.indices])) == 3
+
+
+def test_c01_uniform_random_is_exact_unique_and_deterministic() -> None:
+    data = make_toy_data()
+    first = UniformRandomSelector(11).select(data["X_train"], data["y_train"], 0.05)
+    second = UniformRandomSelector(11).select(data["X_train"], data["y_train"], 0.05)
+    assert first.status == "success"
+    assert len(first.indices) == len(np.unique(first.indices))
+    assert np.array_equal(first.indices, second.indices)
+
+
+def test_c03_preserves_phase_class_mass_and_blocks_without_phase() -> None:
+    data = make_toy_data()
+    phases = np.resize(np.arange(4), len(data["y_train"]))
+    result = PhaseClassStratifiedRandomSelector(11).select(
+        data["X_train"], data["y_train"], 0.10, phases=phases,
+    )
+    assert result.status == "success"
+    assert result.realized_rows == round(len(data["y_train"]) * 0.10)
+    assert result.diagnostics["stratum_mass_error_max"] <= 1e-10
+    blocked = PhaseClassStratifiedRandomSelector(11).select(
+        data["X_train"], data["y_train"], 0.10,
+    )
+    assert blocked.status == "blocked"
+    assert "không fallback" in blocked.diagnostics["reason"]
 
 
 def test_structured_kquad_preserves_budget_and_mass() -> None:
