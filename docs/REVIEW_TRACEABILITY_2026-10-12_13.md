@@ -21,7 +21,7 @@ cáo thực hiện và không được tạo claim học thuật mới.
 | QĐ2/R2/O6 | Review 12 | Xác nhận trực tiếp | Một SKQ-PC; tối đa ba candidate dev | `methods/registry.py`, `proposed/skq_pc.py` | G00/G11 | IN_PROGRESS |
 | QĐ3/O1 | Review 12 | Xác nhận trực tiếp | Split theo khóa, temporal ưu tiên, SGKF fallback | `data/cq_protocol.py` | G03 | IN_PROGRESS |
 | QĐ5 | Review 12 | Xác nhận trực tiếp | Định vị claim theo kết quả dev | freeze/report | M1 evidence | PLANNED |
-| QĐ6/O2/O3 | Review 12 | Xác nhận trực tiếp | Seed, bootstrap, Pareto, không suy non-inferiority từ point estimate | statistics/report | G13 | PLANNED |
+| QĐ6/O2/O3 | Review 12 | Xác nhận trực tiếp | Seed, bootstrap, Pareto, không suy non-inferiority từ point estimate | statistics/report | G13 | IN_PROGRESS |
 | QĐ7/QĐ17/O10/O18 | Review 12–13 | Xác nhận trực tiếp | Privacy, tag, PR, dữ liệu riêng | archive/audit | G01 | BLOCKED_REMEDIATION |
 | QĐ8/QĐ16/O8/O15 | Review 12–13 | Xác nhận trực tiếp | Đo thời gian; operations chỉ diagnostic | `resources.py`, calibration | G09 | IN_PROGRESS |
 | QĐ9/O13 | Review 12–13 | Xác nhận trực tiếp | Dòng gốc là enrollment | CQ protocol | D09 | IN_PROGRESS_DATA_BLOCKED |

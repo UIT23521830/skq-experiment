@@ -337,6 +337,35 @@ chứng confirmatory.
 - Chưa có 13 fit thật trên CQ v1 (1 FullTrain-B + 4×3 C02) nên QĐ12 vẫn
   `IN_PROGRESS`; code toy không được dùng để khóa rho*.
 
+### 14/10/2026 — Paired course bootstrap và Holm
+
+**Xác nhận trực tiếp đã áp dụng**
+
+- Resampling theo `course_root_id`, 2.000 lần mặc định, alpha một phía 0,05; cùng
+  course multiplicity được dùng cho mọi seed/phase trong một comparison.
+- Dấu effect khóa rõ: `Delta_UL=UL(A)-UL(B)` và `Delta_EC=EC(B)-EC(A)`, dương đều
+  có lợi cho A. Output gồm point estimate, CI hai phía, lower bound một phía, raw
+  p và null boundary kể cả non-inferiority margin.
+- Nếu course set giữa unit/method không khớp thì dừng; không tự inner-join/drop.
+- Holm là hàm cho một family; caller phải gọi riêng K1–K5 và K1c–K5c.
+
+**Suy luận triển khai**
+
+- p-value bootstrap dùng hiệu chỉnh `(1 + count)/(B + 1)` để tránh p=0. Đây là
+  lựa chọn triển khai chuẩn nhưng vẫn phải được ghi trong stats protocol freeze.
+- Module chưa quyết định missing/failed run policy ngoài việc không drop course;
+  policy rerun hạ tầng sau test vẫn cần giảng viên trả lời.
+
+**Chưa hoàn tất**
+
+- Chưa có run CQ v1 để tạo K1–K5/K1c–K5c, SD qua seed hoặc Holm report thật;
+  QĐ6/G13 vẫn `IN_PROGRESS`.
+
+**Bằng chứng cục bộ**
+
+- `tests/test_statistics.py`: dấu UL/EC, deterministic bootstrap, mismatch course
+  và Holm step-down.
+
 **Bằng chứng dự kiến**
 
 - `tests/test_method_fidelity.py`.
