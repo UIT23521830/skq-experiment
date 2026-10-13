@@ -256,15 +256,23 @@ def run_config(
                         max_threads = int(
                             (config.resource or {}).get("max_threads", 4)
                         )
+                        learner_params = (config.learner_params or {}).get(
+                            current_learner,
+                        )
+                        X_dev = np.asarray(data["X_dev"])
+                        y_dev = np.asarray(data["y_dev"])
                         if isinstance(result, GeneratedDatasetResult):
                             fitted = fit_generated_learner(
                                 result,
                                 np.asarray(data["y_train"]),
                                 learner_id=current_learner,
                                 model_seed=config.model_seed,
-                                X_inner_val=None,
-                                y_inner_val=None,
+                                learner_params=learner_params,
+                                X_inner_val=X_dev,
+                                y_inner_val=y_dev,
                                 max_threads=max_threads,
+                                class_weight_policy=config.class_weight_policy,
+                                early_stopping=config.early_stopping,
                             )
                         else:
                             fitted = fit_selection_learner(
@@ -273,9 +281,12 @@ def run_config(
                                 np.asarray(data["y_train"]),
                                 learner_id=current_learner,
                                 model_seed=config.model_seed,
-                                X_inner_val=None,
-                                y_inner_val=None,
+                                learner_params=learner_params,
+                                X_inner_val=X_dev,
+                                y_inner_val=y_dev,
                                 max_threads=max_threads,
+                                class_weight_policy=config.class_weight_policy,
+                                early_stopping=config.early_stopping,
                             )
                     except MemoryError:
                         _save_evaluation_failures(

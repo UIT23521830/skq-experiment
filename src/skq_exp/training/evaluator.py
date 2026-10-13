@@ -43,12 +43,14 @@ def fit_selection_learner(
     X_inner_val: np.ndarray | None = None,
     y_inner_val: np.ndarray | None = None,
     max_threads: int = 4,
+    class_weight_policy: str = "balanced",
+    early_stopping: dict[str, Any] | None = None,
 ) -> FittedLearner:
     if selection.status != "success":
         raise RuntimeError(f"Không thể train từ selection status={selection.status}")
     selected_X = X_train[selection.indices]
     selected_y = y_train[selection.indices]
-    class_weights = balanced_class_weights(y_train)
+    class_weights = _class_weights(y_train, class_weight_policy)
     sample_weight = effective_sample_weights(
         selected_y, selection.weights, class_weights,
     )
@@ -73,6 +75,8 @@ def fit_selection_learner(
         selection_breakdown=selection.timings,
         passes_over_train=selection.diagnostics.get("passes_over_train"),
         sample_weight_summary=sample_weight_diagnostics(sample_weight),
+        class_weight_policy=class_weight_policy,
+        early_stopping=early_stopping,
     )
 
 
@@ -86,12 +90,14 @@ def fit_generated_learner(
     X_inner_val: np.ndarray | None = None,
     y_inner_val: np.ndarray | None = None,
     max_threads: int = 4,
+    class_weight_policy: str = "balanced",
+    early_stopping: dict[str, Any] | None = None,
 ) -> FittedLearner:
     """Fit learner trên synthetic table với class-weight từ full train."""
     if generated.status != "success":
         raise RuntimeError(f"Không thể train từ generated status={generated.status}")
     y_full_train = np.asarray(y_full_train)
-    class_weights = balanced_class_weights(y_full_train)
+    class_weights = _class_weights(y_full_train, class_weight_policy)
     sample_weight = effective_sample_weights(
         generated.y, generated.weights, class_weights,
     )
@@ -114,6 +120,8 @@ def fit_generated_learner(
         selection_breakdown=generated.timings,
         passes_over_train=generated.diagnostics.get("passes_over_train"),
         sample_weight_summary=sample_weight_diagnostics(sample_weight),
+        class_weight_policy=class_weight_policy,
+        early_stopping=early_stopping,
     )
 
 
@@ -198,13 +206,34 @@ def _fit_learner(
     selection_breakdown: dict[str, Any],
     passes_over_train: Any,
     sample_weight_summary: dict[str, float | int],
+    class_weight_policy: str,
+    early_stopping: dict[str, Any] | None,
 ) -> FittedLearner:
+    if (X_inner_val is None) != (y_inner_val is None):
+        raise ValueError("X_inner_val và y_inner_val phải cùng có hoặc cùng không")
+    has_dev = X_inner_val is not None
+    early_policy = dict(early_stopping or {})
+    early_enabled = bool(early_policy.get("enabled", False))
+    patience = int(early_policy.get("patience", 20))
+    supports_early_stopping = learner_id in {"xgb", "cat", "mlp"}
+    if early_enabled and early_policy.get("source") != "dev":
+        raise ValueError("early stopping chỉ được dùng source=dev")
+    if early_enabled and supports_early_stopping and not has_dev:
+        raise ValueError(f"{learner_id} bật early stopping nhưng thiếu dev split")
+    resolved_params = dict(learner_params or {})
+    if early_enabled and has_dev:
+        if learner_id == "xgb":
+            resolved_params.setdefault("early_stopping_rounds", patience)
+        elif learner_id == "cat":
+            resolved_params.setdefault("use_best_model", True)
+        elif learner_id == "mlp":
+            resolved_params.setdefault("patience", patience)
     learner = build_learner(
         learner_id,
         seed=model_seed,
         input_dim=input_dim,
         n_classes=len(labels),
-        params=learner_params,
+        params=resolved_params,
         max_threads=max_threads,
     )
     process = psutil.Process()
@@ -212,8 +241,29 @@ def _fit_learner(
     rss_before = process.memory_info().rss
     io_before = _io_bytes(process)
     fit_started = time.perf_counter()
-    if learner_id == "mlp":
-        eval_set = None if X_inner_val is None else (X_inner_val, y_inner_val)
+    if early_enabled and has_dev and learner_id == "xgb":
+        learner.fit(
+            X_fit,
+            y_fit,
+            sample_weight=sample_weight,
+            eval_set=[(X_inner_val, y_inner_val)],
+            verbose=False,
+        )
+    elif early_enabled and has_dev and learner_id == "cat":
+        learner.fit(
+            X_fit,
+            y_fit,
+            sample_weight=sample_weight,
+            eval_set=(X_inner_val, y_inner_val),
+            early_stopping_rounds=patience,
+            verbose=False,
+        )
+    elif learner_id == "mlp":
+        eval_set = (
+            (X_inner_val, y_inner_val)
+            if early_enabled and has_dev
+            else None
+        )
         learner.fit(X_fit, y_fit, sample_weight=sample_weight, eval_set=eval_set)
     else:
         learner.fit(X_fit, y_fit, sample_weight=sample_weight)
@@ -237,8 +287,32 @@ def _fit_learner(
         "selection_breakdown_seconds": selection_breakdown,
         "passes_over_train": passes_over_train,
         "effective_sample_weight": sample_weight_summary,
+        "class_weight_policy": class_weight_policy,
+        "early_stopping_enabled": bool(early_enabled and supports_early_stopping),
+        "early_stopping_source": "dev" if early_enabled and supports_early_stopping else None,
+        "early_stopping_patience": patience if early_enabled and supports_early_stopping else None,
+        "best_iteration": _best_iteration(learner),
     }
     return FittedLearner(model=learner, labels=labels, base_cost=base_cost)
+
+
+def _class_weights(
+    y_full_train: np.ndarray,
+    policy: str,
+) -> dict[int, float] | None:
+    if policy == "natural":
+        return None
+    if policy == "balanced":
+        return balanced_class_weights(y_full_train)
+    raise ValueError("class_weight_policy chỉ nhận natural hoặc balanced")
+
+
+def _best_iteration(learner: Any) -> int | None:
+    for attribute in ("best_iteration", "best_iteration_"):
+        value = getattr(learner, attribute, None)
+        if value is not None:
+            return int(value)
+    return None
 
 
 def _io_bytes(process: psutil.Process) -> int | None:

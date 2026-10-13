@@ -61,6 +61,40 @@ chứng confirmatory.
 - `tests/test_temporal_evaluation.py`: kiểm tra weight thực sự truyền vào learner
   và metadata cost đều có mean=1.
 
+### 14/10/2026 — Contract cấu hình learner và early stopping
+
+**Xác nhận trực tiếp đã áp dụng**
+
+- Runner chỉ truyền split `dev` vào đường early stopping; không có tham số hay
+  nhánh nào nhận `test` cho mục đích này.
+- Tham số learner được khai báo một lần ở cấp experiment và dùng lại cho mọi
+  phương pháp trong experiment đó.
+- Config có `class_weight_policy` rõ ràng (`natural` hoặc `balanced`) và toàn bộ
+  lựa chọn trên được serialize vào provenance.
+
+**Suy luận triển khai**
+
+- Không tự bật early stopping cho config lịch sử. Config V2 phải khai báo
+  `early_stopping={enabled: true, source: dev, patience: ...}` để tránh âm thầm
+  thay đổi nghĩa của các kết quả đã chạy trước review.
+- Dùng cùng một khóa `patience`, sau đó ánh xạ sang `early_stopping_rounds` của
+  XGBoost/CatBoost và `patience` của MLP. Đây là thống nhất giao diện thực thi,
+  không phải tuyên bố ba learner có động lực tối ưu giống nhau.
+- Ghi `best_iteration` khi thư viện cung cấp. Giá trị thiếu được giữ là `null`,
+  không suy đoán từ tổng số estimator/epoch.
+
+**Chưa hoàn tất**
+
+- Chưa tune trên FullTrain-B vì CQ v1 chính thức chưa được freeze.
+- Chưa có evidence của bộ siêu tham số thắng; vì vậy O16/Y5 vẫn ở trạng thái
+  `IN_PROGRESS`, chưa được đánh dấu hoàn tất chỉ nhờ có code.
+
+**Bằng chứng cục bộ**
+
+- `tests/test_training_protocol.py`: dev-only, thiếu dev bị từ chối, ghi
+  best_iteration và kiểm tra class-weight policy.
+- `tests/test_config.py`: từ chối `source=test` và kiểm tra serialization.
+
 **Bằng chứng dự kiến**
 
 - `tests/test_method_fidelity.py`.

@@ -40,6 +40,32 @@ def test_unknown_method_is_rejected(tmp_path: Path) -> None:
         ExperimentConfig.from_json(path)
 
 
+def test_training_policy_rejects_test_as_early_stopping_source() -> None:
+    source = Path(__file__).parents[1] / "configs" / "s0_smoke.json"
+    config = ExperimentConfig.from_json(source)
+    invalid = replace(
+        config,
+        early_stopping={"enabled": True, "source": "test", "patience": 20},
+    )
+    with pytest.raises(ValueError, match="source=dev"):
+        invalid.validate()
+
+
+def test_training_policy_is_serialized_for_provenance() -> None:
+    source = Path(__file__).parents[1] / "configs" / "s0_smoke.json"
+    config = replace(
+        ExperimentConfig.from_json(source),
+        class_weight_policy="natural",
+        learner_params={"xgb": {"max_depth": 3}},
+        early_stopping={"enabled": True, "source": "dev", "patience": 20},
+    )
+    config.validate()
+    payload = config.to_dict()
+    assert payload["class_weight_policy"] == "natural"
+    assert payload["learner_params"]["xgb"]["max_depth"] == 3
+    assert payload["early_stopping"]["source"] == "dev"
+
+
 def test_lrq_can_screen_on_locked_dev_but_not_unlocked_test() -> None:
     root = Path(__file__).parents[1]
     config = ExperimentConfig.from_json(root / "configs" / "pilot_adult_full_seed11.json")

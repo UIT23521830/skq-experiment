@@ -51,6 +51,9 @@ class ExperimentConfig:
     resource: dict[str, Any] | None = None
     artifact_policy: dict[str, Any] | None = None
     method_options: dict[str, dict[str, Any]] | None = None
+    class_weight_policy: str = "balanced"
+    learner_params: dict[str, dict[str, Any]] | None = None
+    early_stopping: dict[str, Any] | None = None
 
     @classmethod
     def from_json(cls, path: str | Path) -> "ExperimentConfig":
@@ -121,6 +124,21 @@ class ExperimentConfig:
         valid_learners = {"lr", "rf", "xgb", "cat", "mlp"}
         if set(self.learner_ids) - valid_learners:
             raise ValueError(f"Learner chưa đăng ký: {sorted(set(self.learner_ids) - valid_learners)}")
+        if self.class_weight_policy not in {"natural", "balanced"}:
+            raise ValueError("class_weight_policy chỉ nhận natural hoặc balanced")
+        unknown_param_learners = set(self.learner_params or {}) - valid_learners
+        if unknown_param_learners:
+            raise ValueError(
+                f"learner_params chứa learner chưa đăng ký: {sorted(unknown_param_learners)}"
+            )
+        early_stopping = self.early_stopping or {}
+        if early_stopping:
+            if not isinstance(early_stopping.get("enabled", False), bool):
+                raise ValueError("early_stopping.enabled phải là bool")
+            if int(early_stopping.get("patience", 20)) <= 0:
+                raise ValueError("early_stopping.patience phải dương")
+            if early_stopping.get("enabled", False) and early_stopping.get("source") != "dev":
+                raise ValueError("early stopping chỉ được phép dùng source=dev")
         options = self.method_options or {}
         invalid_contracts = {}
         for method_id, method_config in options.items():
@@ -193,6 +211,9 @@ class ExperimentConfig:
             "resource": self.resource or {},
             "artifact_policy": self.artifact_policy or {},
             "method_options": self.method_options or {},
+            "class_weight_policy": self.class_weight_policy,
+            "learner_params": self.learner_params or {},
+            "early_stopping": self.early_stopping or {},
             "paths": {
                 "raw_root": str(self.paths.raw_root),
                 "processed_root": str(self.paths.processed_root),

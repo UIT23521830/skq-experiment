@@ -30,7 +30,7 @@ cáo thực hiện và không được tạo claim học thuật mới.
 | QĐ13/Y8 | Review 13 | Xác nhận trực tiếp | Test mới chỉ mở sau freeze hợp lệ | freeze/runner | G14/G15 | PLANNED |
 | QĐ14/Y11 | Review 13 | Xác nhận trực tiếp | CoreTab-XGB OVA phải ghi adapted | `methods/adapted` | G12 | PLANNED |
 | QĐ15/O11/O14 | Review 13 | Xác nhận trực tiếp | Effective weights mean one cho mọi run | weights/evaluator | G06 | IMPLEMENTED_TESTED |
-| O16/Y5 | Review 13 | Xác nhận trực tiếp | Tune một lần, early stopping chỉ dùng dev | learners/evaluator/runner | G08 | PLANNED |
+| O16/Y5 | Review 13 | Xác nhận trực tiếp | Tune một lần, early stopping chỉ dùng dev | learners/evaluator/runner | G08 | IN_PROGRESS |
 | O17 | Review 13 | Xác nhận trực tiếp | ID không làm tọa độ selector | CQ protocol/runner | G07 | PLANNED |
 | O4 | Review 12–13 | Xác nhận trực tiếp | Synthetic ra khỏi phần chính | config/registry | G00 | PLANNED |
 | O5 | Review 12–13 | Xác nhận trực tiếp | Bổ sung sáu baseline | method adapters | G10 | PLANNED |
