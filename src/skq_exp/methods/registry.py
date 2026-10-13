@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from .benchmark import GonzalezBenchmarkSelector, LeverageBenchmarkSelector
+from .adapted import CoreTabXGBOVASelector
 from .controls import (
     PhaseClassStratifiedRandomSelector,
     StratifiedRandomSelector,
@@ -102,6 +103,15 @@ METHOD_SPECS = {
             note="Official-source adapter; subset thật theo kích thước native CoreTab-XGB.",
             fidelity_tier="official_source_adapter", task_contract="binary_only",
             budget_contract="native_realized", evidence_role="historical",
+        ),
+        MethodSpec(
+            "a_coretab_xgb_ova", "CoreTab-XGB (OVA, adapted)", "adaptation", "implemented",
+            fidelity_tier="official_source_adapter", task_contract="multiclass",
+            budget_contract="native_realized", evidence_role="confirmatory",
+            note=(
+                "QĐ14: mỗi lớp gọi CoreTab-XGB binary upstream, quota largest remainder; "
+                "không pad, thiếu positive giữ realized size. Không phải native multiclass."
+            ),
         ),
         MethodSpec(
             "n_bdis_native", "BDIS-native", "native", "implemented",
@@ -317,6 +327,8 @@ def build_selector(method_id: str, seed: int, *, n_components: int = 256, extern
         return PhaseClassStratifiedRandomSelector(seed)
     if method_id in {"n01_coretab_dt_subset", "n02_coretab_xgb_subset"}:
         return CoreTabNativeSelector(method_id, repo_root, seed, options)
+    if method_id == "a_coretab_xgb_ova":
+        return CoreTabXGBOVASelector(repo_root, seed, options)
     if method_id == "n_bdis_native":
         return BDISNativeSelector(repo_root, seed, options)
     if method_id == "n_autocoreset_native":

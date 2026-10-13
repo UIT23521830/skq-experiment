@@ -291,6 +291,36 @@ chứng confirmatory.
 - CQ v1 adapter chưa sinh `phase_train.npy`; vì vậy C03 mới được xác nhận bằng toy
   contract, chưa có evidence D07 trên Pool B thật.
 
+### 14/10/2026 — CoreTab-XGB OVA adapted
+
+**Xác nhận trực tiếp đã áp dụng**
+
+- Mỗi lớp chạy nhánh CoreTab-XGB binary class-vs-rest với seed `selector_seed+c`.
+- Quota lớp dùng largest remainder theo prior Pool B; chỉ giữ positive rows tối đa
+  quota. Union unique, không pad và thiếu thì `realized < requested`.
+- Ledger diagnostics giữ quota, binary rows, positive rows, kept rows, seed,
+  options và upstream commit cho từng lớp.
+- Method mang nhãn chính xác `CoreTab-XGB (OVA, adapted)`; CoreTab native vẫn
+  `binary_only` và multiclass trả `na_contract`.
+
+**Suy luận triển khai**
+
+- Options có một block chung và override theo lớp để ghi được tham số đã chốt.
+  Code không tự thử nhiều cấu hình và không chọn theo test; tối đa ba cấu hình dev
+  vẫn phải được khai báo ở protocol bên ngoài selector.
+- Nếu một nhánh binary lỗi, wrapper giữ nguyên status của nhánh đó và dừng toàn
+  method; không thay bằng random/proxy.
+
+**Chưa hoàn tất**
+
+- Chưa chạy toy reproduction của upstream checkout thật và chưa calibrate params
+  để đủ positive quota trên dev CQ v1. Vì vậy QĐ14/G12 vẫn `IN_PROGRESS`.
+
+**Bằng chứng cục bộ**
+
+- `tests/test_coretab_ova.py`: quota, positive filtering, thiếu realized, seed và
+  chặn binary contract.
+
 **Bằng chứng dự kiến**
 
 - `tests/test_method_fidelity.py`.

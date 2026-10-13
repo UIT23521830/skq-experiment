@@ -37,3 +37,11 @@ def test_c01_c03_are_controls_not_proposed_methods() -> None:
         assert spec.fidelity_tier == "local_reimplementation"
         assert spec.confirmatory_allowed is True
 
+
+def test_coretab_ova_has_adapted_multiclass_contract() -> None:
+    spec = METHOD_SPECS["a_coretab_xgb_ova"]
+    assert spec.role == "adaptation"
+    assert spec.task_contract == "multiclass"
+    assert "adapted" in spec.display_name.lower()
+    assert METHOD_SPECS["n02_coretab_xgb_subset"].task_contract == "binary_only"
+
