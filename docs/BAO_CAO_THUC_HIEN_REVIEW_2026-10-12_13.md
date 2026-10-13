@@ -95,6 +95,40 @@ chứng confirmatory.
   best_iteration và kiểm tra class-weight policy.
 - `tests/test_config.py`: từ chối `source=test` và kiểm tra serialization.
 
+### 14/10/2026 — Privacy audit public release
+
+**Xác nhận trực tiếp đã áp dụng**
+
+- Audit tách riêng finding của file đang track, object trong Git history và entry
+  của archive; một nhóm lỗi không che hoặc ghi đè nhóm khác.
+- Không đưa raw/processed CQ, prediction, row ID, selected indices, sample weights,
+  credential hoặc notebook còn output vào gói public.
+- Không rewrite lịch sử hay force-push tự động khi phát hiện finding.
+
+**Kết quả audit repo hiện tại**
+
+- Không thấy path dữ liệu CQ mức dòng trong danh sách finding.
+- Phát hiện workbook `MA_TRAN_THUC_NGHIEM_SKQ_FULL.xlsx` đang được track và ba
+  object cùng path trong lịch sử. Đây là vi phạm allowlist binary, chưa phải bằng
+  chứng workbook chứa PII.
+- Đã bỏ workbook khỏi Git index nhưng giữ nguyên file local. Lịch sử chưa thay đổi,
+  nên G01 là `BLOCKED_REMEDIATION`, không được ghi pass.
+- Chi tiết và hai phương án xử lý trước public release nằm tại
+  `docs/PRIVACY_INCIDENT_2026-10-14.md`.
+
+**Suy luận triển khai**
+
+- Scan Git history theo object path để tránh đọc/xuất nội dung object nhạy cảm vào
+  log. Việc kiểm nội dung credential được thực hiện trên file đang track và chỉ
+  báo loại secret, không chép giá trị secret vào evidence.
+- Repo private là giảm phơi nhiễm nhưng không thay thế privacy gate; trạng thái
+  GitHub do nhóm xác nhận, script cục bộ không xem đó là bằng chứng tự động.
+
+**Bằng chứng cục bộ**
+
+- `scripts/audit_public_release.py` và `tests/test_privacy_audit.py`.
+- Evidence local bị ignore: `artifacts/privacy/privacy_audit.json`.
+
 **Bằng chứng dự kiến**
 
 - `tests/test_method_fidelity.py`.

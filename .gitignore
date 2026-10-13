@@ -31,3 +31,4 @@ MA_TRAN_THUC_NGHIEM_SKQ_FULL.xlsx
 *.parquet
 predictions.*
 selected_indices.*
+/artifacts/privacy/

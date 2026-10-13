@@ -22,7 +22,7 @@ cáo thực hiện và không được tạo claim học thuật mới.
 | QĐ3/O1 | Review 12 | Xác nhận trực tiếp | Split theo khóa, temporal ưu tiên, SGKF fallback | `data/cq_protocol.py` | G03 | PLANNED |
 | QĐ5 | Review 12 | Xác nhận trực tiếp | Định vị claim theo kết quả dev | freeze/report | M1 evidence | PLANNED |
 | QĐ6/O2/O3 | Review 12 | Xác nhận trực tiếp | Seed, bootstrap, Pareto, không suy non-inferiority từ point estimate | statistics/report | G13 | PLANNED |
-| QĐ7/QĐ17/O10/O18 | Review 12–13 | Xác nhận trực tiếp | Privacy, tag, PR, dữ liệu riêng | archive/audit | G01 | IN_PROGRESS |
+| QĐ7/QĐ17/O10/O18 | Review 12–13 | Xác nhận trực tiếp | Privacy, tag, PR, dữ liệu riêng | archive/audit | G01 | BLOCKED_REMEDIATION |
 | QĐ8/QĐ16/O8/O15 | Review 12–13 | Xác nhận trực tiếp | Đo thời gian; operations chỉ diagnostic | `resources.py`, calibration | G09 | IN_PROGRESS |
 | QĐ9/O13 | Review 12–13 | Xác nhận trực tiếp | Dòng gốc là enrollment | CQ protocol | D09 | BLOCKED_EXTERNAL |
 | QĐ10–QĐ11 | Review 12 | Xác nhận trực tiếp | Qc/Yc và UL/EC hai cấp | course metrics | G04 | PLANNED |
@@ -37,7 +37,7 @@ cáo thực hiện và không được tạo claim học thuật mới.
 | Y1–Y3/Y6–Y10/Y12–Y16 | Review 12–13 | Xác nhận trực tiếp | Số liệu, tên, seed, owner, reporting | registry/reports/docs | G16 | PLANNED |
 | INF-01 | V2 §13.3 | Suy luận triển khai | CoreTab-cell chỉ là candidate disabled chờ duyệt | registry | metadata test | IN_PROGRESS |
 | INF-02 | V2 §12 | Suy luận triển khai | Dùng prediction interval khi calibration | calibration | calibration tests | PLANNED |
-| INF-03 | V2 §20 | Suy luận triển khai | Audit cả Git history, không chỉ working tree | audit script | privacy evidence | PLANNED |
+| INF-03 | V2 §20 | Suy luận triển khai | Audit cả Git history, không chỉ working tree | audit script | privacy evidence | IMPLEMENTED_FINDINGS |
 
 ## Quy tắc cập nhật
 
