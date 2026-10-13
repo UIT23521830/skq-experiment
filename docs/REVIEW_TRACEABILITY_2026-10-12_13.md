@@ -25,7 +25,7 @@ cáo thực hiện và không được tạo claim học thuật mới.
 | QĐ7/QĐ17/O10/O18 | Review 12–13 | Xác nhận trực tiếp | Privacy, tag, PR, dữ liệu riêng | archive/audit | G01 | BLOCKED_REMEDIATION |
 | QĐ8/QĐ16/O8/O15 | Review 12–13 | Xác nhận trực tiếp | Đo thời gian; operations chỉ diagnostic | `resources.py`, calibration | G09 | IN_PROGRESS |
 | QĐ9/O13 | Review 12–13 | Xác nhận trực tiếp | Dòng gốc là enrollment | CQ protocol | D09 | IN_PROGRESS_DATA_BLOCKED |
-| QĐ10–QĐ11 | Review 12 | Xác nhận trực tiếp | Qc/Yc và UL/EC hai cấp | course metrics | G04 | PLANNED |
+| QĐ10–QĐ11 | Review 12 | Xác nhận trực tiếp | Qc/Yc và UL/EC hai cấp | course metrics | G04 | IN_PROGRESS |
 | QĐ12 | Review 13 | Xác nhận trực tiếp | Headroom chọn rho* trên dev | statistics/config | headroom evidence | PLANNED |
 | QĐ13/Y8 | Review 13 | Xác nhận trực tiếp | Test mới chỉ mở sau freeze hợp lệ | freeze/runner | G14/G15 | IN_PROGRESS |
 | QĐ14/Y11 | Review 13 | Xác nhận trực tiếp | CoreTab-XGB OVA phải ghi adapted | `methods/adapted` | G12 | PLANNED |

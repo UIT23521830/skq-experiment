@@ -239,6 +239,36 @@ chứng confirmatory.
 - `tests/test_cq_protocol.py`: chuẩn hóa LOQV, boundary nhãn, phase cutoff, split
   loại trừ, course-root grouping và Pool B bốn snapshot.
 
+### 14/10/2026 — Endpoint hai cấp và prediction schema private
+
+**Xác nhận trực tiếp đã áp dụng**
+
+- UL là Macro-F1 cấp enrollment theo từng P1–P4; summary chính là trung bình bốn
+  phase và P1 được giữ thành endpoint thứ cấp.
+- Qc là mean qkc; Yc dùng cùng tau. EC chính là MAE của Q-hat theo PCC, chỉ tính
+  cho khóa có `n_c >= n_min`; nếu phase không có khóa đủ điều kiện thì ghi `null`,
+  không đổi thành 0.
+- `mu_E,mu_G,mu_A` tính một lần từ enrollment của khóa train và bắt buộc thỏa
+  `mu_E < mu_G < mu_A`.
+- CC, signed error và course Macro-F1 được ghi là sensitivity, không thay PCC/EC.
+- Prediction mức dòng có schema riêng và `row_level_visibility=private_only`.
+
+**Suy luận triển khai**
+
+- Chưa gắn course metrics vào runner lịch sử vì artifact cũ không có
+  course_root/learner/q/phase đúng CQ v1. Tích hợp sớm sẽ tạo metric sai đơn vị.
+- `n_min` không có mặc định trong hàm endpoint; config M0 phải truyền giá trị đã
+  duyệt. Khi chưa đủ khóa, lý do thiếu được thể hiện bằng count và `null`.
+
+**Chưa hoàn tất**
+
+- Chưa khóa `n_min`, chưa có prediction CQ v1 và chưa kiểm Qc với data card sai số
+  <1e-9. Vì vậy QĐ10–QĐ11/G04 vẫn `IN_PROGRESS`.
+
+**Bằng chứng cục bộ**
+
+- `tests/test_course_metrics.py`: schema private, UL/P1, PCC/EC, n_min và thứ tự mu.
+
 **Bằng chứng dự kiến**
 
 - `tests/test_method_fidelity.py`.
