@@ -30,6 +30,35 @@ class MethodSpec:
     output_kind: str = "selection"
     allowed_learners: tuple[str, ...] | None = None
     note: str = ""
+    fidelity_tier: str = "unspecified_legacy"
+    task_contract: str = "task_agnostic"
+    budget_contract: str = "exact"
+    evidence_role: str = "legacy"
+    confirmatory_allowed: bool = True
+    max_dev_configs: int = 3
+
+    def __post_init__(self) -> None:
+        valid_fidelity = {
+            "unspecified_legacy", "official_native_path", "official_source_adapter",
+            "official_source_with_declared_patches", "benchmark_source_adapter",
+            "local_reimplementation", "proposed",
+        }
+        valid_tasks = {"task_agnostic", "binary_only", "multiclass", "regression"}
+        valid_budgets = {"exact", "native_realized", "at_most", "synthetic_exact", "not_applicable"}
+        valid_evidence = {
+            "legacy", "exploratory", "dev_selection", "confirmatory",
+            "appendix", "historical",
+        }
+        if self.fidelity_tier not in valid_fidelity:
+            raise ValueError(f"fidelity_tier không hợp lệ: {self.fidelity_tier}")
+        if self.task_contract not in valid_tasks:
+            raise ValueError(f"task_contract không hợp lệ: {self.task_contract}")
+        if self.budget_contract not in valid_budgets:
+            raise ValueError(f"budget_contract không hợp lệ: {self.budget_contract}")
+        if self.evidence_role not in valid_evidence:
+            raise ValueError(f"evidence_role không hợp lệ: {self.evidence_role}")
+        if self.max_dev_configs < 0 or self.max_dev_configs > 3:
+            raise ValueError("max_dev_configs phải nằm trong [0, 3] theo review")
 
 
 METHOD_SPECS = {
@@ -49,14 +78,20 @@ METHOD_SPECS = {
         MethodSpec(
             "n01_coretab_dt_subset", "CoreTab-DT Official", "native", "implemented",
             note="Official-source adapter; subset thật theo kích thước native CoreTab-DT.",
+            fidelity_tier="official_source_adapter", task_contract="binary_only",
+            budget_contract="native_realized", evidence_role="historical",
         ),
         MethodSpec(
             "n02_coretab_xgb_subset", "CoreTab-XGB Official", "native", "implemented",
             note="Official-source adapter; subset thật theo kích thước native CoreTab-XGB.",
+            fidelity_tier="official_source_adapter", task_contract="binary_only",
+            budget_contract="native_realized", evidence_role="historical",
         ),
         MethodSpec(
             "n_bdis_native", "BDIS-native", "native", "implemented",
             note="Official-source adapter; subset thật, cần faiss và giữ realized size upstream.",
+            fidelity_tier="official_source_adapter", task_contract="task_agnostic",
+            budget_contract="native_realized", evidence_role="confirmatory",
         ),
         MethodSpec(
             "n_autocoreset_native", "AutoCoreset-native", "native", "implemented",
@@ -120,10 +155,12 @@ METHOD_SPECS = {
         MethodSpec(
             "p01_skq_coretab_dt", "SKQ-CoreTab-DT", "proposed", "implemented", True,
             note="Đề xuất: structure CoreTab-DT + RFF herding + simplex-QP.",
+            fidelity_tier="proposed", evidence_role="historical", confirmatory_allowed=False,
         ),
         MethodSpec(
             "p02_skq_coretab_xgb", "SKQ-CoreTab-XGB", "proposed", "implemented", True,
             note="Đề xuất: structure CoreTab-XGB + RFF herding + simplex-QP.",
+            fidelity_tier="proposed", evidence_role="historical", confirmatory_allowed=False,
         ),
         MethodSpec(
             "p03_skq_bdis_filtered", "SKQ-BDIS-Filtered", "proposed", "implemented", True,
@@ -131,6 +168,7 @@ METHOD_SPECS = {
                 "Đề xuất: candidate BDIS + phân bổ có cấu trúc + RFF herding + "
                 "simplex-QP; realized=min(mục tiêu 5%, BDIS pool) và báo cáo size thực."
             ),
+            fidelity_tier="proposed", evidence_role="historical", confirmatory_allowed=False,
         ),
         MethodSpec(
             "p04_skq_lrq_sq", "SKQ-LRQ-SQ", "proposed", "implemented", True,
@@ -138,6 +176,7 @@ METHOD_SPECS = {
                 "Đề xuất query-aware một learner; được screen trên dev với parent "
                 "khai báo trước, test chỉ mở sau freeze."
             ),
+            fidelity_tier="proposed", evidence_role="historical", confirmatory_allowed=False,
         ),
         MethodSpec(
             "p05_skq_lrq_mq", "SKQ-LRQ-MQ", "proposed", "implemented", True,
@@ -145,6 +184,7 @@ METHOD_SPECS = {
                 "Đề xuất query-aware nhiều learner; được screen trên dev với parent "
                 "khai báo trước, test chỉ mở sau freeze."
             ),
+            fidelity_tier="proposed", evidence_role="historical", confirmatory_allowed=False,
         ),
         MethodSpec(
             "p06_gonzalez_qp", "Gonzalez-QP", "proposed", "implemented", True,
@@ -152,6 +192,7 @@ METHOD_SPECS = {
                 "Đề xuất screening: giữ candidate Gonzalez đúng 5%, dùng Voronoi theo "
                 "Gonzalez anchor và simplex-QP; tách riêng để đo đóng góp của weighting."
             ),
+            fidelity_tier="proposed", evidence_role="appendix", confirmatory_allowed=False,
         ),
         MethodSpec(
             "p07_skq_gonzalez", "SKQ-Gonzalez", "proposed", "implemented", True,
@@ -159,6 +200,7 @@ METHOD_SPECS = {
                 "Đề xuất coverage-aware: Gonzalez tạo candidate pool 2x budget, "
                 "SKQ RFF herding + simplex-QP nén về exact budget."
             ),
+            fidelity_tier="proposed", evidence_role="historical", confirmatory_allowed=False,
         ),
         MethodSpec(
             "p08_skq_gonzalez_lrq_sq", "SKQ-Gonzalez-LRQ-SQ", "proposed", "implemented", True,
@@ -166,6 +208,7 @@ METHOD_SPECS = {
                 "Đề xuất coverage/query-aware một learner: candidate Gonzalez 2x, "
                 "OOF-LR query loss, RFF herding và simplex-QP; dev screen trước freeze."
             ),
+            fidelity_tier="proposed", evidence_role="historical", confirmatory_allowed=False,
         ),
         MethodSpec(
             "p09_skq_gonzalez_lrq_mq", "SKQ-Gonzalez-LRQ-MQ", "proposed", "implemented", True,
@@ -173,6 +216,7 @@ METHOD_SPECS = {
                 "Đề xuất coverage/query-aware nhiều learner: candidate Gonzalez 2x, "
                 "OOF LR/RF/XGB query loss, RFF herding và simplex-QP; dev screen trước freeze."
             ),
+            fidelity_tier="proposed", evidence_role="historical", confirmatory_allowed=False,
         ),
         MethodSpec(
             "p10_skq_mr_coretab_xgb", "SKQ-MR-CoreTab-XGB", "proposed", "implemented",
@@ -180,6 +224,7 @@ METHOD_SPECS = {
                 "Đề xuất scale-out: CoreTab-XGB tạo leaf structure theo shard xác định, "
                 "sau đó SKQ streaming cấp exact budget toàn cục; dùng toàn bộ train, không proxy."
             ),
+            fidelity_tier="proposed", evidence_role="historical", confirmatory_allowed=False,
         ),
         MethodSpec(
             "p11_skq_mr_bdis", "SKQ-MR-BDIS", "proposed", "implemented",
@@ -187,6 +232,22 @@ METHOD_SPECS = {
                 "Đề xuất scale-out: BDIS tạo candidate theo shard, SKQ streaming reduce toàn cục; "
                 "giữ realized size khi candidate pool nhỏ, không pad/trùng và không proxy."
             ),
+            fidelity_tier="proposed", evidence_role="historical", confirmatory_allowed=False,
+        ),
+        MethodSpec(
+            "x_coretab_mc_cell",
+            "SKQ-PC/CoreTab-cell (pending approval)",
+            "experimental_candidate",
+            "experimental_disabled",
+            note=(
+                "Suy luận triển khai của nhóm: candidate multiclass dùng leaf-cell CoreTab; "
+                "không phải CoreTab native, không được vào config confirmatory trước phê duyệt."
+            ),
+            fidelity_tier="proposed",
+            task_contract="multiclass",
+            budget_contract="exact",
+            evidence_role="exploratory",
+            confirmatory_allowed=False,
         ),
         MethodSpec(
             "d02_parent_structured_random", "Parent-Structured Random", "ablation", "implemented", True,
