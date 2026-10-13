@@ -161,6 +161,41 @@ chứng confirmatory.
 - `tests/test_feature_views.py`: loại ID/target-derived, bất biến khi hoán vị ID,
   giữ mapping indices sang learner view và từ chối semantic role sai.
 
+### 14/10/2026 — Nền resource calibration đo thật
+
+**Xác nhận trực tiếp đã áp dụng**
+
+- Contract yêu cầu 50k/200k/800k dòng và ba replicate/mức; warm-up và
+  steady-state là hai trường riêng.
+- Mỗi observation gắn CPU/GPU/RAM/VRAM/thread/environment ID và giữ nguyên status.
+- Fit log–log trên p90 từng cỡ, lưu slope/intercept/residual cùng point estimate và
+  upper prediction bound tại kích thước Pool B.
+- Trần selector mặc định 3 giờ. Vượt trần chỉ yêu cầu shared shard wrapper hoặc
+  giải quyết protocol; `run_status` vẫn `null`. Chỉ phép chạy thật mới được ghi
+  `timeout` bởi ResourceGuard.
+
+**Suy luận triển khai**
+
+- Không tự loại outlier; aggregation được ghi
+  `p90_per_size_no_outlier_removal` để tránh che lần chạy chậm.
+- Hệ số 1,96 dùng cho upper diagnostic trên log scale, chưa được diễn giải là CI
+  thống kê của claim. Review chưa khóa goodness-of-fit threshold nên code không
+  tự đặt ngưỡng R² để pass/fail.
+- Thiếu size/replicate trả `needs_more_calibration`; tuyệt đối không dùng
+  `estimated_operations` để bù cho phép đo thiếu.
+
+**Chưa hoàn tất**
+
+- Chưa có chín phép đo/selector trên đúng thiết bị Kaggle của CQ v1 và chưa tạo
+  `resource_calibration.parquet`; QĐ16/G09 vẫn `IN_PROGRESS`.
+- Shared shard wrapper phải được kiểm trên selector được M0 duyệt; wrapper không
+  được tính là novelty.
+
+**Bằng chứng cục bộ**
+
+- `tests/test_resource_calibration.py`: đủ/thiếu replicate, upper bound và quyết
+  định shard không tạo timeout dự báo.
+
 **Bằng chứng dự kiến**
 
 - `tests/test_method_fidelity.py`.
