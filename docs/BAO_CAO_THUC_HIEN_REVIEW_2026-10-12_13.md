@@ -135,8 +135,8 @@ chứng confirmatory.
 
 - Selector view chỉ nhận cột semantic role `feature`; cột `id`, `target`,
   `target_derived` không thể được đánh dấu cho selector.
-- Learner view cũng loại ID/target/target-derived, nhưng có thể nhận metadata đã
-  được protocol cho phép rõ ràng.
+- Learner view loại course ID/target/target-derived; mã người học, giảng viên và
+  trường chỉ được nhận khi protocol cho phép rõ từng cột. Selector vẫn loại mọi ID.
 - Hai view giữ nguyên row order; selected indices chọn cùng enrollment trong
   learner view và row ID mapping riêng.
 
@@ -195,6 +195,49 @@ chứng confirmatory.
 
 - `tests/test_resource_calibration.py`: đủ/thiếu replicate, upper bound và quyết
   định shard không tạo timeout dự báo.
+
+### 14/10/2026 — CQ v1 enrollment, phase, Pool B và decision split
+
+**Xác nhận trực tiếp đã áp dụng**
+
+- Một dòng gốc là lượt ghi danh `(learner, course)`; q là trung bình LOQV qua các
+  chương, y dùng ngưỡng 0,2/0,4 với chiều nhỏ là tốt.
+- Nếu `euclid_to_111` có max lớn hơn 1 thì chia căn 3; audit ghi lại có thực hiện
+  hay không. Quy tắc chương chưa mở là tham số bắt buộc, không có mặc định âm thầm.
+- P1–P4 là 25/50/75/90% từ enroll_time tới course_end; nhãn enrollment cố định ở
+  bốn snapshot.
+- Pool B chỉ gồm P1–P4 của enrollment thuộc khóa train và có cột phase.
+- Split temporal xếp `course_root_id` theo ngày mở đầu tiên; TEMPORAL và SGKF là
+  hai quyết định loại trừ lẫn nhau.
+- D09 kiểm cặp enrollment duy nhất, `y=tau(q)` và within-course label variation.
+
+**Sửa lại suy luận ở lát selector view**
+
+- Đọc lại QĐ3 xác nhận learner được giữ mã người học/giảng viên/trường theo cách
+  TEMPO-DQ; chỉ course ID không làm feature. Contract đã đổi để cho phép ID theo
+  từng cột ở learner, trong khi selector cấm mọi ID. Đây là correction được ghi
+  công khai, không che thay đổi bằng cách sửa mô tả cũ mà không giải thích.
+
+**Suy luận triển khai**
+
+- Ngưỡng timestamp “đáng tin cậy” chưa được review chốt, vì vậy
+  `max_timestamp_missing_rate` bắt buộc truyền vào `SplitDecisionThresholds`.
+  Hai ngưỡng đã có trong review—ít nhất 10 khóa/lớp ở test và CI dev không quá
+  0,005—được giữ làm mặc định nhưng vẫn cần giảng viên xác nhận tại M0.
+- Hàm split/Pool B mới chỉ tạo contract và kiểm invariant, chưa tự dựng feature từ
+  event log. Danh sách phép gộp sự kiện phải đến từ data card đã duyệt.
+
+**Chưa hoàn tất**
+
+- Chưa có CQ v1 thật, data card, `splits.json`, feature aggregation hay kiểm D01–D12
+  trên dữ liệu; các gate liên quan vẫn `IN_PROGRESS_DATA_BLOCKED`.
+- Chưa cài SGKF 5-fold × 2; chỉ có decision branch. Chỉ cài sau khi biết temporal
+  có qua gate hay không, tránh chạy hai chiến lược nối tiếp.
+
+**Bằng chứng cục bộ**
+
+- `tests/test_cq_protocol.py`: chuẩn hóa LOQV, boundary nhãn, phase cutoff, split
+  loại trừ, course-root grouping và Pool B bốn snapshot.
 
 **Bằng chứng dự kiến**
 

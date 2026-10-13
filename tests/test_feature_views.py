@@ -10,7 +10,7 @@ from skq_exp.data.views import ColumnContract, build_feature_views
 
 
 CONTRACTS = (
-    ColumnContract("enrollment_id", "id"),
+    ColumnContract("enrollment_id", "id", learner_allowed=True),
     ColumnContract("course_id", "id"),
     ColumnContract("q", "target_derived"),
     ColumnContract("y", "target"),
@@ -35,7 +35,9 @@ def _frame() -> pd.DataFrame:
 def test_selector_and_learner_views_have_explicit_semantics() -> None:
     views = build_feature_views(_frame(), CONTRACTS, row_ids=np.array([7, 8, 9]))
     assert views.selector_columns == ("event_count", "duration")
-    assert views.learner_columns == ("event_count", "duration", "school_type")
+    assert views.learner_columns == (
+        "enrollment_id", "event_count", "duration", "school_type",
+    )
     assert np.array_equal(views.row_ids, [7, 8, 9])
     assert len(views.contract_hash) == 64
 

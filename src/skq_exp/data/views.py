@@ -1,9 +1,9 @@
 """Tạo selector view và learner view từ schema vai trò cột.
 
 Selector hình học/kernel chỉ được thấy cột vai trò ``feature``. Learner có thể
-nhận thêm metadata đã được protocol cho phép, nhưng ID, target và target-derived
-luôn nằm ngoài cả hai ma trận. Hai view giữ nguyên row order để selected indices
-tham chiếu trực tiếp về learner view.
+nhận metadata và mã người học/giảng viên/trường nếu protocol cho phép từng cột;
+course ID, target và target-derived vẫn bị loại. Hai view giữ nguyên row order để
+selected indices tham chiếu trực tiếp về learner view.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ class ColumnContract:
             raise ValueError(f"Vai trò cột không hợp lệ: {self.name}={self.role}")
         if self.selector_allowed and self.role != "feature":
             raise ValueError(f"Selector không được dùng cột {self.role}: {self.name}")
-        if self.role in {"id", "target", "target_derived"} and self.learner_allowed:
+        if self.role in {"target", "target_derived"} and self.learner_allowed:
             raise ValueError(f"Learner không được dùng cột {self.role}: {self.name}")
         normalized = self.name.strip().lower()
         if normalized in RESERVED_TARGET_DERIVED and self.role not in {

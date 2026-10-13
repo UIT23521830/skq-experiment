@@ -17,17 +17,17 @@ cáo thực hiện và không được tạo claim học thuật mới.
 
 | ID | Nguồn | Loại | Yêu cầu | Code chính | Test/evidence | Trạng thái |
 |---|---|---|---|---|---|---|
-| QĐ1/R1 | Review 12 | Xác nhận trực tiếp | CQ là dữ liệu chính | `configs/cq_v1/*` | G00/G02 | PLANNED |
+| QĐ1/R1 | Review 12 | Xác nhận trực tiếp | CQ là dữ liệu chính | `configs/cq_v1/*` | G00/G02 | IN_PROGRESS |
 | QĐ2/R2/O6 | Review 12 | Xác nhận trực tiếp | Một SKQ-PC; tối đa ba candidate dev | `methods/registry.py`, `proposed/skq_pc.py` | G00/G11 | IN_PROGRESS |
-| QĐ3/O1 | Review 12 | Xác nhận trực tiếp | Split theo khóa, temporal ưu tiên, SGKF fallback | `data/cq_protocol.py` | G03 | PLANNED |
+| QĐ3/O1 | Review 12 | Xác nhận trực tiếp | Split theo khóa, temporal ưu tiên, SGKF fallback | `data/cq_protocol.py` | G03 | IN_PROGRESS |
 | QĐ5 | Review 12 | Xác nhận trực tiếp | Định vị claim theo kết quả dev | freeze/report | M1 evidence | PLANNED |
 | QĐ6/O2/O3 | Review 12 | Xác nhận trực tiếp | Seed, bootstrap, Pareto, không suy non-inferiority từ point estimate | statistics/report | G13 | PLANNED |
 | QĐ7/QĐ17/O10/O18 | Review 12–13 | Xác nhận trực tiếp | Privacy, tag, PR, dữ liệu riêng | archive/audit | G01 | BLOCKED_REMEDIATION |
 | QĐ8/QĐ16/O8/O15 | Review 12–13 | Xác nhận trực tiếp | Đo thời gian; operations chỉ diagnostic | `resources.py`, calibration | G09 | IN_PROGRESS |
-| QĐ9/O13 | Review 12–13 | Xác nhận trực tiếp | Dòng gốc là enrollment | CQ protocol | D09 | BLOCKED_EXTERNAL |
+| QĐ9/O13 | Review 12–13 | Xác nhận trực tiếp | Dòng gốc là enrollment | CQ protocol | D09 | IN_PROGRESS_DATA_BLOCKED |
 | QĐ10–QĐ11 | Review 12 | Xác nhận trực tiếp | Qc/Yc và UL/EC hai cấp | course metrics | G04 | PLANNED |
 | QĐ12 | Review 13 | Xác nhận trực tiếp | Headroom chọn rho* trên dev | statistics/config | headroom evidence | PLANNED |
-| QĐ13/Y8 | Review 13 | Xác nhận trực tiếp | Test mới chỉ mở sau freeze hợp lệ | freeze/runner | G14/G15 | PLANNED |
+| QĐ13/Y8 | Review 13 | Xác nhận trực tiếp | Test mới chỉ mở sau freeze hợp lệ | freeze/runner | G14/G15 | IN_PROGRESS |
 | QĐ14/Y11 | Review 13 | Xác nhận trực tiếp | CoreTab-XGB OVA phải ghi adapted | `methods/adapted` | G12 | PLANNED |
 | QĐ15/O11/O14 | Review 13 | Xác nhận trực tiếp | Effective weights mean one cho mọi run | weights/evaluator | G06 | IMPLEMENTED_TESTED |
 | O16/Y5 | Review 13 | Xác nhận trực tiếp | Tune một lần, early stopping chỉ dùng dev | learners/evaluator/runner | G08 | IN_PROGRESS |
