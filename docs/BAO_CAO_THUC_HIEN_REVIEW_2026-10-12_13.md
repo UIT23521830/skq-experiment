@@ -129,6 +129,38 @@ chứng confirmatory.
 - `scripts/audit_public_release.py` và `tests/test_privacy_audit.py`.
 - Evidence local bị ignore: `artifacts/privacy/privacy_audit.json`.
 
+### 14/10/2026 — Contract selector view và learner view
+
+**Xác nhận trực tiếp đã áp dụng**
+
+- Selector view chỉ nhận cột semantic role `feature`; cột `id`, `target`,
+  `target_derived` không thể được đánh dấu cho selector.
+- Learner view cũng loại ID/target/target-derived, nhưng có thể nhận metadata đã
+  được protocol cho phép rõ ràng.
+- Hai view giữ nguyên row order; selected indices chọn cùng enrollment trong
+  learner view và row ID mapping riêng.
+
+**Suy luận triển khai**
+
+- Dùng `ColumnContract` machine-readable thay vì chỉ dựa trên danh sách tên cột.
+  Các tên q/y/Qc/Yc/COELO/AFELO/ACELO/label còn có guard bổ sung để phát hiện gán
+  sai semantic role.
+- Runner ưu tiên `X_selector_train` khi artifact có ma trận này. Dataset lịch sử
+  chưa có thì dùng `X_train` với diagnostic `selector_view=shared_legacy`; fallback
+  này chỉ để tương thích/chẩn đoán, **không** được tính là G07 đạt cho CQ v1.
+- Feature contract có hash và feature count riêng cho selector/learner trong
+  diagnostics; không ghi dữ liệu hàng vào metadata public.
+
+**Chưa hoàn tất**
+
+- CQ v1 adapter chưa sinh `X_selector_*` và `feature_contract.json` vì schema dữ
+  liệu tái tạo chưa được chốt. Do đó O17/G07 vẫn `IN_PROGRESS`.
+
+**Bằng chứng cục bộ**
+
+- `tests/test_feature_views.py`: loại ID/target-derived, bất biến khi hoán vị ID,
+  giữ mapping indices sang learner view và từ chối semantic role sai.
+
 **Bằng chứng dự kiến**
 
 - `tests/test_method_fidelity.py`.

@@ -453,7 +453,8 @@ def _produce_or_block(
     query_cache, data_fingerprint, freeze_manifest,
 ):
     y_train = np.asarray(data["y_train"])
-    X_train = np.asarray(data["X_train"])
+    X_learner_train = np.asarray(data["X_train"])
+    X_train = np.asarray(data.get("X_selector_train", X_learner_train))
     requested = max(1, int(round(len(y_train) * config.budget_ratio)))
     if method_id == "c00_full_train":
         indices = np.arange(len(y_train), dtype=np.int64)
@@ -515,6 +516,16 @@ def _produce_or_block(
     resource_diagnostics = {
         "estimated_working_bytes": int(estimate.working_bytes),
         **operation_diagnostics(estimate, resource_policy),
+        "selector_view": (
+            "dedicated"
+            if "X_selector_train" in data
+            else "shared_legacy"
+        ),
+        "selector_feature_count": int(X_train.shape[1]),
+        "learner_feature_count": int(X_learner_train.shape[1]),
+        "feature_contract_hash": (
+            (data.get("feature_contract") or {}).get("contract_hash")
+        ),
     }
     try:
         enforce_preflight(estimate, resource_policy)

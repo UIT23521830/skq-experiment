@@ -196,7 +196,16 @@ def load_processed(dataset_id: str, processed_root: str | Path, mmap: bool = Tru
         result[f"X_{split}"] = np.load(root / f"X_{split}.npy", mmap_mode=mode)
         result[f"y_{split}"] = np.load(root / f"y_{split}.npy", mmap_mode=mode)
         result[f"row_ids_{split}"] = np.load(root / f"row_ids_{split}.npy", mmap_mode=mode)
+        selector_path = root / f"X_selector_{split}.npy"
+        if selector_path.exists():
+            result[f"X_selector_{split}"] = np.load(selector_path, mmap_mode=mode)
     result["split_manifest"] = json.loads((root / "split_manifest.json").read_text(encoding="utf-8"))
+    feature_contract_path = root / "feature_contract.json"
+    result["feature_contract"] = (
+        json.loads(feature_contract_path.read_text(encoding="utf-8"))
+        if feature_contract_path.exists()
+        else None
+    )
     for phase in range(1, 5):
         feature_path = root / f"X_test_phase{phase}.npy"
         label_path = root / f"y_test_phase{phase}.npy"
