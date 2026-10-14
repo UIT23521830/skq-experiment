@@ -2,7 +2,7 @@
   "_example_only": true,
   "schema_version": 4,
   "manifest_id": "sha256-of-all-fields-except-manifest-id",
-  "previous_manifest_id": null,
+  "previous_manifest_id": "m0-protocol-manifest-id",
   "state": "M1_METHOD_FROZEN",
   "plan_version": "2.0.0",
   "review_hashes": {

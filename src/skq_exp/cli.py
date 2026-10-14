@@ -18,7 +18,11 @@ from pathlib import Path
 from .config import ExperimentConfig
 from .data import fetch_dataset, prepare_dataset, prepare_external_dataset
 from .experiments import run_config, run_smoke
-from .experiments.freeze import create_freeze_manifest, create_freeze_manifest_v4
+from .experiments.freeze import (
+    create_freeze_manifest,
+    create_freeze_manifest_v4,
+    create_protocol_manifest_v4,
+)
 from .methods import allowed_learners_for, get_method_spec
 from .reports import aggregate_results
 
@@ -116,6 +120,12 @@ def main(argv: list[str] | None = None) -> int:
         "--spec", required=True,
         help="JSON khai báo candidate, winner, rho*, hash evidence và shard policy.",
     )
+    freeze_m0 = sub.add_parser(
+        "freeze-m0-v4",
+        help="Khóa protocol M0 trước khi xem kết quả candidate trên dev.",
+    )
+    freeze_m0.add_argument("--config", required=True)
+    freeze_m0.add_argument("--spec", required=True)
     aggregate = sub.add_parser("aggregate")
     aggregate.add_argument("--artifact-root", required=True)
     args = parser.parse_args(argv)
@@ -168,6 +178,31 @@ def main(argv: list[str] | None = None) -> int:
             allowed_extensions=tuple(spec["allowed_extensions"]),
             previous_manifest_id=spec.get("previous_manifest_id"),
             deviations=tuple(spec.get("deviations", ())),
+            plan_version=str(spec.get("plan_version", "2.0.0")),
+        ))
+        return 0
+    if args.command == "freeze-m0-v4":
+        spec = json.loads(Path(args.spec).read_text(encoding="utf-8"))
+        required = {
+            "candidate_list", "split_strategy", "rho_star", "n_min", "delta_c",
+            "shard_policy", "resource_decision_rule", "data_card_hash",
+            "headroom_evidence_hash", "resource_evidence_hash",
+        }
+        missing = required - set(spec)
+        if missing:
+            raise ValueError(f"Freeze-m0-v4 spec thiếu trường: {sorted(missing)}")
+        print(create_protocol_manifest_v4(
+            config,
+            candidate_list=tuple(spec["candidate_list"]),
+            split_strategy=str(spec["split_strategy"]),
+            rho_star=float(spec["rho_star"]),
+            n_min=int(spec["n_min"]),
+            delta_c=float(spec["delta_c"]),
+            shard_policy=dict(spec["shard_policy"]),
+            resource_decision_rule=dict(spec["resource_decision_rule"]),
+            data_card_hash=str(spec["data_card_hash"]),
+            headroom_evidence_hash=str(spec["headroom_evidence_hash"]),
+            resource_evidence_hash=str(spec["resource_evidence_hash"]),
             plan_version=str(spec.get("plan_version", "2.0.0")),
         ))
         return 0
