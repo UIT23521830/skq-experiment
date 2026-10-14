@@ -47,5 +47,34 @@
     "methods": ["s_tame_official"],
     "status": "adapter_ready_torch_and_max_rows_gate",
     "commit": "ac15fc12fa6f3f7c2b53e1ce5e43acda3a0fdaca"
+  },
+  "moderate_ds": {
+    "url": "https://github.com/tmllab/2023_ICLR_Moderate-DS.git",
+    "commit_prefix": "7f64d3",
+    "methods": ["b_moderate_ds_adapted"],
+    "status": "official_source_locked_tabular_adapter_required",
+    "commit": "7f64d319624aab981dab1604a1aa3d528eb82f76"
+  },
+  "ccs": {
+    "url": "https://github.com/haizhongzheng/Coverage-centric-coreset-selection.git",
+    "commit_prefix": "b37f16",
+    "methods": ["b_ccs_oof_xgb_adapted"],
+    "status": "official_source_locked_oof_xgb_adapter_required",
+    "commit": "b37f166ace760e17f4d5baae17a828bdb88c6667"
+  },
+  "dataoob": {
+    "url": "https://github.com/ykwon0407/dataoob.git",
+    "commit_prefix": "5375f8",
+    "methods": ["b_dataoob_official"],
+    "status": "official_source_locked_interface_pending_toy_test",
+    "commit": "5375f8087763a4125fd99948cd6eec76148e801a"
+  },
+  "goodpoints": {
+    "url": "https://github.com/microsoft/goodpoints.git",
+    "commit_prefix": "181b12",
+    "methods": ["b_kernel_thinning_classwise"],
+    "status": "official_source_locked_classwise_adapter_required",
+    "commit": "181b12ade5dd02a61b65ed5cb9444c916fa3135f",
+    "sparse_paths": ["goodpoints"]
   }
 }

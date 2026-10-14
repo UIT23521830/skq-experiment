@@ -44,6 +44,7 @@ kaggle-panel = [
   "fast-enum>=1.3",
   "faiss-cpu>=1.10,<2",
   "iterative-stratification>=0.1.9,<1",
+  "goodpoints @ git+https://github.com/microsoft/goodpoints.git@181b12ade5dd02a61b65ed5cb9444c916fa3135f",
 ]
 # TDBench/KIP dùng API JAX cũ; 0.4.38 có wheel Python 3.13 và vẫn thuộc
 # nhánh API tương thích với neural-tangents 0.6.5.
@@ -63,6 +64,7 @@ kaggle-full = [
   "fast-enum>=1.3",
   "faiss-cpu>=1.10,<2",
   "iterative-stratification>=0.1.9,<1",
+  "goodpoints @ git+https://github.com/microsoft/goodpoints.git@181b12ade5dd02a61b65ed5cb9444c916fa3135f",
   "jax==0.4.38",
   "jaxlib==0.4.38",
   "jax-cuda12-plugin[with-cuda]==0.4.38",

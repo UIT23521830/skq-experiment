@@ -25,7 +25,7 @@ from sklearn.decomposition import PCA
 from ..base import BaseSelector
 from ..contracts import exact_budget_size
 from ..result import SelectionResult
-from ..native.common import git_commit
+from ..native.common import verify_locked_repo
 
 
 def _load_upstream_functions(repo: Path) -> dict[str, object]:
@@ -86,6 +86,10 @@ class GonzalezBenchmarkSelector(_TabularDistillationSelector):
         requested = exact_budget_size(len(y_train), budget_ratio)
         started = time.perf_counter()
         X = np.asarray(X_train)
+        try:
+            upstream_commit = verify_locked_repo(self.repo)
+        except RuntimeError as error:
+            return SelectionResult.failure(self.method_id, "blocked", requested, str(error))
         functions = _load_upstream_functions(self.repo)
         np.random.seed(self.seed)
         selected_X, _selected_y = functions["distill_coreset"](
@@ -98,7 +102,7 @@ class GonzalezBenchmarkSelector(_TabularDistillationSelector):
             realized_rows=requested, budget_mode="exact_total", method_id=self.method_id,
             diagnostics={
                 "upstream_repo": "https://github.com/corneliuflorea/Tabular-Data-Distillation.git",
-                "upstream_commit": git_commit(self.repo),
+                "upstream_commit": upstream_commit,
                 "fidelity": "official upstream function executed through a narrow compatibility adapter",
                 "execution_mode": "upstream_source_function",
                 "compatibility_patch": "seed injection and output-row-to-index recovery",
@@ -114,6 +118,10 @@ class LeverageBenchmarkSelector(_TabularDistillationSelector):
         requested = exact_budget_size(len(y_train), budget_ratio)
         started = time.perf_counter()
         X = np.asarray(X_train)
+        try:
+            upstream_commit = verify_locked_repo(self.repo)
+        except RuntimeError as error:
+            return SelectionResult.failure(self.method_id, "blocked", requested, str(error))
         functions = _load_upstream_functions(self.repo)
         np.random.seed(self.seed)
         _selected_X, _selected_y, indices = functions["distill_coreset_leverage_scores"](
@@ -126,7 +134,7 @@ class LeverageBenchmarkSelector(_TabularDistillationSelector):
             realized_rows=requested, budget_mode="exact_total", method_id=self.method_id,
             diagnostics={
                 "upstream_repo": "https://github.com/corneliuflorea/Tabular-Data-Distillation.git",
-                "upstream_commit": git_commit(self.repo),
+                "upstream_commit": upstream_commit,
                 "fidelity": "official upstream function executed through a narrow compatibility adapter",
                 "execution_mode": "upstream_source_function",
                 "compatibility_patch": "injected missing sklearn PCA name and explicit seed",

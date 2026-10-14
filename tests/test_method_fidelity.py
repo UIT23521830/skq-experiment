@@ -45,3 +45,24 @@ def test_coretab_ova_has_adapted_multiclass_contract() -> None:
     assert "adapted" in spec.display_name.lower()
     assert METHOD_SPECS["n02_coretab_xgb_subset"].task_contract == "binary_only"
 
+
+def test_review_1012_modern_baselines_are_registered_with_honest_labels() -> None:
+    expected = {
+        "b_moderate_ds_adapted": ("baseline", "official_source_adapter"),
+        "b_ccs_oof_xgb_adapted": ("baseline", "official_source_adapter"),
+        "b_dataoob_official": ("baseline", "official_source_with_declared_patches"),
+        "b_kernel_thinning_classwise": ("baseline", "official_source_adapter"),
+    }
+    for method_id, (role, fidelity) in expected.items():
+        spec = METHOD_SPECS[method_id]
+        assert spec.status == "implemented"
+        assert spec.role == role
+        assert spec.fidelity_tier == fidelity
+        assert spec.confirmatory_allowed is True
+        assert spec.evidence_role == "confirmatory"
+        assert spec.budget_contract == "exact"
+
+    assert "adapted" in METHOD_SPECS["b_moderate_ds_adapted"].display_name.lower()
+    assert "adapted" in METHOD_SPECS["b_ccs_oof_xgb_adapted"].display_name.lower()
+    assert "adapted" in METHOD_SPECS["b_kernel_thinning_classwise"].display_name.lower()
+

@@ -12,7 +12,13 @@ from pathlib import Path
 from typing import Any
 
 from .benchmark import GonzalezBenchmarkSelector, LeverageBenchmarkSelector
-from .adapted import CoreTabXGBOVASelector
+from .adapted import (
+    CCSOOFXGBSelector,
+    CoreTabXGBOVASelector,
+    DataOOBOfficialSelector,
+    KernelThinningClasswiseSelector,
+    ModerateDSTabularSelector,
+)
 from .controls import (
     PhaseClassStratifiedRandomSelector,
     StratifiedRandomSelector,
@@ -81,6 +87,8 @@ METHOD_SPECS = {
         MethodSpec(
             "c02_stratified_random", "Stratified Random", "control", "implemented",
             allowed_learners=("xgb",),
+            fidelity_tier="local_reimplementation", task_contract="multiclass",
+            budget_contract="exact", evidence_role="confirmatory",
             note=(
                 "Control cổ điển: subset thật, exact budget. Contract cũ chỉ chạy XGBoost; "
                 "config full-v2 ghi đè rõ ràng để đánh giá đủ năm learner."
@@ -107,10 +115,51 @@ METHOD_SPECS = {
         MethodSpec(
             "a_coretab_xgb_ova", "CoreTab-XGB (OVA, adapted)", "adaptation", "implemented",
             fidelity_tier="official_source_adapter", task_contract="multiclass",
-            budget_contract="native_realized", evidence_role="confirmatory",
+            budget_contract="at_most", evidence_role="confirmatory",
             note=(
                 "QĐ14: mỗi lớp gọi CoreTab-XGB binary upstream, quota largest remainder; "
                 "không pad, thiếu positive giữ realized size. Không phải native multiclass."
+            ),
+        ),
+        MethodSpec(
+            "b_moderate_ds_adapted", "Moderate-DS (tabular, adapted)",
+            "baseline", "implemented",
+            fidelity_tier="official_source_adapter", task_contract="multiclass",
+            budget_contract="exact", evidence_role="confirmatory",
+            note=(
+                "Review 12 §7.6: khoảng cách tới median lớp trên selector_view chuẩn hóa; "
+                "giữ cửa sổ score trung tâm exact-budget. Adapted vì source gốc dùng embedding ảnh."
+            ),
+        ),
+        MethodSpec(
+            "b_ccs_oof_xgb_adapted", "CCS (OOF-XGBoost EL2N, adapted)",
+            "baseline", "implemented", allowed_learners=("xgb", "lr"),
+            fidelity_tier="official_source_adapter", task_contract="multiclass",
+            budget_contract="exact", evidence_role="confirmatory",
+            note=(
+                "Review 12 §7.6: stratified sampling từ source CCS; EL2N lấy từ xác suất "
+                "OOF-XGBoost nên bắt buộc gắn nhãn adapted."
+            ),
+        ),
+        MethodSpec(
+            "b_dataoob_official", "Data-OOB official", "baseline", "implemented",
+            fidelity_tier="official_source_with_declared_patches",
+            task_contract="multiclass", budget_contract="exact",
+            evidence_role="confirmatory",
+            note=(
+                "Review 12 §7.6: Data-OOB native cho dữ liệu bảng; gọi RandomForestDV upstream, "
+                "giữ các dòng có OOB value cao nhất; vá import cho sklearn mới và khai báo "
+                "top-k value→subset là adaptation của protocol."
+            ),
+        ),
+        MethodSpec(
+            "b_kernel_thinning_classwise", "Kernel Thinning (classwise, adapted)",
+            "baseline", "implemented",
+            fidelity_tier="official_source_adapter", task_contract="multiclass",
+            budget_contract="exact", evidence_role="confirmatory",
+            note=(
+                "Review 12 §7.6: GoodPoints Kernel Thinning theo từng lớp; exact-budget "
+                "pre-pool được khai báo rõ, không gọi là native paper reproduction."
             ),
         ),
         MethodSpec(
@@ -134,6 +183,8 @@ METHOD_SPECS = {
         ),
         MethodSpec(
             "n_gcoreset_benchmark", "Gonzalez Coreset benchmark", "benchmark", "implemented",
+            fidelity_tier="benchmark_source_adapter", task_contract="multiclass",
+            budget_contract="exact", evidence_role="confirmatory",
             note="Benchmark-source adapter; farthest-first subset thật, không phải native paper source.",
         ),
         MethodSpec(
@@ -278,14 +329,20 @@ METHOD_SPECS = {
         MethodSpec(
             "d02_parent_structured_random", "Parent-Structured Random", "ablation", "implemented", True,
             note="Ablation: giữ structure và QP nhưng thay kernel herding bằng random.",
+            fidelity_tier="local_reimplementation", task_contract="multiclass",
+            budget_contract="exact", evidence_role="confirmatory",
         ),
         MethodSpec(
             "d04_global_rff_quadrature", "Global RFF Quadrature", "ablation", "implemented",
             note="Ablation: bỏ parent structure, giữ class + RFF herding + QP.",
+            fidelity_tier="local_reimplementation", task_contract="multiclass",
+            budget_contract="exact", evidence_role="confirmatory",
         ),
         MethodSpec(
             "d05_equal_group_weight", "Equal-Within-Group Weight", "ablation", "derived", True,
             note="Ablation: giữ index winner, thay simplex-QP bằng trọng số đều trong nhóm.",
+            fidelity_tier="local_reimplementation", task_contract="multiclass",
+            budget_contract="exact", evidence_role="confirmatory",
         ),
     ]
 }
@@ -329,6 +386,14 @@ def build_selector(method_id: str, seed: int, *, n_components: int = 256, extern
         return CoreTabNativeSelector(method_id, repo_root, seed, options)
     if method_id == "a_coretab_xgb_ova":
         return CoreTabXGBOVASelector(repo_root, seed, options)
+    if method_id == "b_moderate_ds_adapted":
+        return ModerateDSTabularSelector(repo_root, seed, options)
+    if method_id == "b_ccs_oof_xgb_adapted":
+        return CCSOOFXGBSelector(repo_root, seed, options)
+    if method_id == "b_dataoob_official":
+        return DataOOBOfficialSelector(repo_root, seed, options)
+    if method_id == "b_kernel_thinning_classwise":
+        return KernelThinningClasswiseSelector(repo_root, seed, options)
     if method_id == "n_bdis_native":
         return BDISNativeSelector(repo_root, seed, options)
     if method_id == "n_autocoreset_native":
