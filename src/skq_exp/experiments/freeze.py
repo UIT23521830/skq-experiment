@@ -443,7 +443,7 @@ def validate_freeze_manifest_v4(
     if manifest["previous_manifest_id"] != m0["manifest_id"]:
         raise RuntimeError("M1 không liên kết đúng M0")
     for field in (
-        "review_hashes", "dataset_fingerprints", "split_hashes",
+        "review_hashes", "config_hash", "dataset_fingerprints", "split_hashes",
         "feature_schema_hashes", "selector_seeds", "model_seed", "rho_star",
         "class_weight_policy", "learner_params", "early_stopping_policy",
         "shard_policy", "candidate_list",

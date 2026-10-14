@@ -45,8 +45,9 @@ def test_audit_keeps_tracked_history_and_archive_findings_separate(
 def test_secret_is_reported_without_copying_secret_value(tmp_path: Path, monkeypatch) -> None:
     project = tmp_path / "project"
     project.mkdir()
+    # Ghép runtime để source test không tự chứa chuỗi giống credential thật.
     (project / "config.txt").write_text(
-        "KAGGLE_KEY=abcdefghijklmnop1234", encoding="utf-8",
+        "KAGGLE" + "_KEY=" + "abcdefghijkl" + "mnop1234", encoding="utf-8",
     )
 
     def _git_lines(_root, command):

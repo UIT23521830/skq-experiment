@@ -540,6 +540,30 @@ chứng confirmatory.
 - `docs/quality_gates_v2.json`, `scripts/audit_quality_gates.py` và
   `tests/test_quality_gates.py`.
 
+### 14/10/2026 — Kiểm tra hồi quy cuối phần nền V2
+
+**Kết quả kiểm chứng**
+
+- Toàn bộ 124 test của repo đạt, gồm test pipeline lịch sử và contract V2 mới.
+- `compileall` đạt cho `src` và `scripts`; toàn bộ file `.py`, `.md`, `.json`
+  trong source/docs/config/tests đọc được bằng UTF-8 strict.
+- Quality-gate audit với evidence map rỗng trả `not_ready` và đúng 17 trạng thái
+  `missing_evidence`; không có gate nào pass giả.
+- Privacy audit cuối có 0 finding ở tracked files, 3 finding lịch sử của workbook
+  `MA_TRAN_THUC_NGHIEM_SKQ_FULL.xlsx`, 0 finding archive. G01 vẫn
+  `BLOCKED_REMEDIATION`; kết quả này không bị ghi thành pass.
+- Fixture kiểm scanner credential được ghép chuỗi tại runtime để chính source test
+  không giống credential thật; test vẫn xác nhận scanner phát hiện mẫu và không
+  chép giá trị bí mật vào finding.
+
+**Phạm vi kết luận**
+
+- Nền code V2 đã có contract cho dữ liệu/split/view/label, trọng số, learner,
+  tài nguyên, control, CoreTab OVA, thống kê, M0/M1, evidence/claim và gate audit.
+- Chưa có CQ v1, phép đo Kaggle T4, baseline fidelity đầy đủ, candidate SKQ-PC
+  được duyệt hoặc manifest M0 thật. Vì vậy chưa được chạy confirmatory và chưa có
+  claim kết quả mới; đây là blocker đúng thiết kế, không phải test code thất bại.
+
 **Bằng chứng dự kiến**
 
 - `tests/test_method_fidelity.py`.
