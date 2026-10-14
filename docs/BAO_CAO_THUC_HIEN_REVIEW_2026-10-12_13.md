@@ -544,7 +544,8 @@ chứng confirmatory.
 
 **Kết quả kiểm chứng**
 
-- Toàn bộ 124 test của repo đạt, gồm test pipeline lịch sử và contract V2 mới.
+- Toàn bộ 137 test của repo đạt ở lần kiểm tra cuối, gồm test pipeline lịch sử
+  và contract V2 mới.
 - `compileall` đạt cho `src` và `scripts`; toàn bộ file `.py`, `.md`, `.json`
   trong source/docs/config/tests đọc được bằng UTF-8 strict.
 - Quality-gate audit với evidence map rỗng trả `not_ready` và đúng 17 trạng thái
@@ -568,6 +569,82 @@ chứng confirmatory.
 
 - `tests/test_method_fidelity.py`.
 - Commit của lát metadata sau khi test đạt.
+
+### 14/10/2026 — Baseline fidelity G10 theo Review 12 §7.6/§7.11
+
+**Xác nhận trực tiếp đã áp dụng**
+
+- Panel bổ sung C01, C03, Moderate-DS, CCS, Data-OOB và Kernel Thinning;
+  đồng thời kiểm cùng Gonzalez, CoreTab-XGB OVA và BDIS đang dùng trong bảng.
+- Mỗi source ngoài được khóa URL và full commit. Source/dependency lỗi giữ
+  `blocked`/`failed` trong mẫu số, tuyệt đối không fallback sang proxy.
+- Moderate-DS được ghi adapted vì thay image embedding bằng `selector_view`
+  chuẩn hóa. CCS được ghi adapted vì EL2N đến từ OOF-XGBoost. Kernel Thinning
+  được ghi adapted vì quota theo lớp và deterministic pre-pool. CoreTab OVA giữ
+  nhãn adapted/no-pad theo QĐ14.
+- Data-OOB giữ nguyên estimator `RandomForestClassifierDV` và OOB value từ
+  source, nhưng việc stable top-k value để tạo exact-budget subset được khai báo
+  là adaptation của protocol, không gọi là native nguyên trạng.
+
+**Suy luận triển khai**
+
+- G10 được tách thành manifest cấu trúc và evidence toy thực. Manifest không có
+  trường tự khai `passed`; strict audit chỉ pass khi evidence có đủ 10 status
+  `success`.
+- Toy artifact không lưu index/trọng số/dòng dữ liệu. Đây là kiểm interface và
+  provenance, không phải kết quả CQ v1 hoặc bằng chứng hiệu quả.
+- GoodPoints được pin commit ở cả lock và dependency. Checkout dùng sparse path
+  `goodpoints`; package cần build Cython trên Linux/Kaggle.
+
+**Kết quả local và điểm chưa đạt**
+
+- Structural audit đạt 10/10 method rows.
+- Toy local đạt 8/10: C01, C02, C03, Gonzalez, Moderate-DS, CCS, Data-OOB và
+  CoreTab-XGB OVA đều success.
+- Kernel Thinning bị `blocked` vì Python local chưa build GoodPoints/Cython;
+  BDIS bị `blocked` vì local thiếu `faiss-cpu`. Không phương pháp nào bị đổi tên
+  hoặc thay proxy. Vì vậy G10 strict hiện vẫn **chưa pass**.
+- Cần chạy `docs/KAGGLE_T4_FIDELITY_G10.md` trên phiên Kaggle Free T4 đã kiểm kê
+  để có evidence 10/10 trước M1.
+
+**Bằng chứng code**
+
+- `docs/method_fidelity_v2.json`, `external/official_repos.lock.json`.
+- `scripts/run_method_fidelity_toys.py`, `scripts/audit_method_fidelity.py`.
+- `tests/test_modern_baselines.py`, `tests/test_fidelity_audit.py`.
+
+### 14/10/2026 — G00 config audit và missing/failed-run policy G13
+
+**Xác nhận trực tiếp đã áp dụng**
+
+- Confirmatory config từ chối synthetic, method không được phép confirmatory và
+  method không mang evidence role phù hợp. Dev selection từ chối quá ba candidate
+  proposed hoặc candidate chưa được review/registry duyệt.
+- Mẫu số thống kê là toàn bộ ô method × selector seed × phase đã preregister.
+  Run failed/timeout/blocked không bị drop và metric lỗi không được impute bằng 0.
+- Nếu thiếu, trùng hoặc có ô non-success, hypothesis liên quan được ghi
+  `not_estimable_incomplete`; bảng mô tả vẫn báo completion/failure rate.
+
+**Suy luận triển khai**
+
+- Review yêu cầu không bỏ run lỗi khỏi mẫu số nhưng chưa chỉ định phép gán metric
+  cho lỗi. Chọn không impute và không suy luận khi panel chưa đủ là phương án bảo
+  thủ, tránh vừa thưởng vừa phạt tùy ý; cần khóa cùng protocol tại M0.
+- `statistics_protocol_v2.json` khóa dấu effect, alpha 0,05 một phía, 2.000
+  bootstrap theo course root, hai Holm family và missing policy. Đây là protocol
+  nền, chưa phải hash M0 thật.
+
+**Chưa hoàn tất**
+
+- Chưa có expected-cell manifest và run CQ v1 thật, nên G13 chưa thể pass ở mức
+  evidence. Quyết định có cho rerun lỗi hạ tầng sau test hay không vẫn cần giảng
+  viên xác nhận; mọi rerun nếu được phép phải ghi deviation và giữ lần lỗi đầu.
+
+**Bằng chứng code**
+
+- `src/skq_exp/training/completeness.py`,
+  `scripts/audit_statistics_readiness.py`, `docs/statistics_protocol_v2.json`.
+- `tests/test_completeness.py`, các test G00 trong `tests/test_config.py`.
 
 ## Mẫu cho các mục tiếp theo
 
