@@ -187,6 +187,40 @@ class ExperimentConfig:
                 raise ValueError(
                     "confirmatory config phải resolve published_reference và proposed_winner từ freeze"
                 )
+            invalid_panel = {
+                method_id: {
+                    "status": METHOD_SPECS[method_id].status,
+                    "role": METHOD_SPECS[method_id].role,
+                    "evidence_role": METHOD_SPECS[method_id].evidence_role,
+                }
+                for method_id in self.method_ids
+                if (
+                    METHOD_SPECS[method_id].output_kind == "synthetic"
+                    or not METHOD_SPECS[method_id].confirmatory_allowed
+                    or METHOD_SPECS[method_id].evidence_role not in {"confirmatory", "appendix"}
+                )
+            }
+            if invalid_panel:
+                raise ValueError(
+                    "G00: confirmatory config chứa method retired/synthetic/chưa được duyệt: "
+                    f"{invalid_panel}"
+                )
+        if self.evidence_role == "dev_selection":
+            candidates = [
+                method_id for method_id in self.method_ids
+                if METHOD_SPECS[method_id].role == "proposed"
+            ]
+            if len(candidates) > 3:
+                raise ValueError("G00: dev_selection chỉ được có tối đa ba candidate proposed")
+            unapproved = [
+                method_id for method_id in candidates
+                if not METHOD_SPECS[method_id].confirmatory_allowed
+            ]
+            if unapproved:
+                raise ValueError(
+                    "G00: candidate dev_selection chưa được review/registry duyệt: "
+                    f"{unapproved}"
+                )
 
     def to_dict(self) -> dict[str, Any]:
         return {

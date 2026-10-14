@@ -66,6 +66,40 @@ def test_training_policy_is_serialized_for_provenance() -> None:
     assert payload["early_stopping"]["source"] == "dev"
 
 
+def test_g00_rejects_synthetic_confirmatory_method() -> None:
+    root = Path(__file__).parents[1]
+    config = ExperimentConfig.from_json(root / "configs" / "s2_confirm.json")
+    invalid = replace(config, method_ids=("s_tame_official",))
+    with pytest.raises(ValueError, match="G00"):
+        invalid.validate()
+
+
+def test_g00_rejects_more_than_three_dev_candidates(monkeypatch) -> None:
+    from skq_exp.methods import registry as registry_module
+
+    root = Path(__file__).parents[1]
+    source = ExperimentConfig.from_json(root / "configs" / "s0_smoke.json")
+    candidates = tuple(f"candidate_{index}" for index in range(4))
+    template = registry_module.METHOD_SPECS["p01_skq_coretab_dt"]
+    for method_id in candidates:
+        monkeypatch.setitem(
+            registry_module.METHOD_SPECS,
+            method_id,
+            replace(
+                template,
+                method_id=method_id,
+                role="proposed",
+                status="implemented",
+                needs_parent=False,
+                evidence_role="dev_selection",
+                confirmatory_allowed=True,
+            ),
+        )
+    invalid = replace(source, evidence_role="dev_selection", method_ids=candidates)
+    with pytest.raises(ValueError, match="tối đa ba"):
+        invalid.validate()
+
+
 def test_lrq_can_screen_on_locked_dev_but_not_unlocked_test() -> None:
     root = Path(__file__).parents[1]
     config = ExperimentConfig.from_json(root / "configs" / "pilot_adult_full_seed11.json")
