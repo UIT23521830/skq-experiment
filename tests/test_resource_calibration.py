@@ -18,6 +18,9 @@ DEVICE = DeviceMetadata(
     vram_bytes=16 * 1024**3,
     max_threads=4,
     environment_id="fixture-v1",
+    provider="kaggle-free",
+    gpu_count=2,
+    accelerator_policy="gpu-t4",
 )
 
 
@@ -45,6 +48,7 @@ def test_complete_calibration_fits_prediction_and_preserves_replicates() -> None
     assert len(fitted["observations"]) == 9
     assert fitted["upper_prediction_seconds"] >= fitted["predicted_seconds"]
     assert fitted["time_model"]["slope"] > 0
+    assert fitted["observations"][0]["allocated_gpu_hours"] > 0
 
 
 def test_missing_replicate_requires_more_measurement_not_operations() -> None:

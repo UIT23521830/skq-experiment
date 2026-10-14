@@ -27,6 +27,9 @@ class DeviceMetadata:
     vram_bytes: int | None
     max_threads: int
     environment_id: str
+    provider: str = "unknown"
+    gpu_count: int = 0
+    accelerator_policy: str = "unspecified"
 
 
 @dataclass(frozen=True)
@@ -51,6 +54,10 @@ class CalibrationObservation:
             raise ValueError("thời gian calibration không hợp lệ")
         if self.peak_rss_bytes <= 0:
             raise ValueError("peak_rss_bytes phải dương")
+        if self.device.gpu_count < 0:
+            raise ValueError("gpu_count không được âm")
+        if self.device.gpu_count > 0 and not self.device.gpu:
+            raise ValueError("Có GPU được cấp nhưng thiếu tên GPU")
 
 
 def fit_scaling_model(
@@ -83,7 +90,16 @@ def fit_scaling_model(
         "replicate_counts": {str(key): value for key, value in counts.items()},
         "target_rows": int(target_rows),
         "observations": [
-            {**asdict(item), "device": asdict(item.device)} for item in observations
+            {
+                **asdict(item),
+                "device": asdict(item.device),
+                "wall_clock_seconds": item.warmup_seconds + item.steady_seconds,
+                "allocated_gpu_hours": (
+                    (item.warmup_seconds + item.steady_seconds)
+                    * item.device.gpu_count / 3600.0
+                ),
+            }
+            for item in observations
         ],
     }
     if not complete:
