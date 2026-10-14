@@ -443,6 +443,103 @@ chứng confirmatory.
 - `scripts/audit_claim_ledger.py --artifact-root <root>` trả exit code khác 0 khi
   có finding.
 
+### 14/10/2026 — State machine M0 kế thừa M1
+
+**Xác nhận trực tiếp đã áp dụng**
+
+- M0 khóa split/hash, rho*, class-weight policy, learner params, `n_min`,
+  `delta_c`, shard/resource rule, tối đa ba candidate, seed và feature schema khi
+  test còn khóa và trước dev selection.
+- M1 bắt buộc đọc M0 hợp lệ, liên kết bằng `previous_manifest_id` và không được
+  thay candidate list, rho*, shard policy, seed, feature/split/data hash hoặc
+  learner policy đã khóa ở M0.
+- Config M0 phải có `evidence_role=dev_selection`; config confirmatory không thể
+  được dùng để tạo M0. M1 thiếu M0 bị dừng trước khi tạo artifact.
+
+**Suy luận triển khai**
+
+- M0 và M1 là hai file bất biến riêng. Việc tách file giúp kiểm toán đúng chuyển
+  trạng thái, thay vì dùng một file rồi sửa `state` tại chỗ.
+- Candidate M0 phải có role `proposed`, status `implemented` và
+  `confirmatory_allowed=true` trong registry. Candidate CoreTab-cell đang chờ
+  duyệt không thỏa điều kiện này, nên contract không cho lách bằng spec JSON.
+- M0 khóa commit; nếu code thay đổi giữa M0 và M1 thì phải tạo lại protocol/deviation
+  theo phê duyệt, không tiếp tục bằng manifest cũ.
+
+**Chưa hoàn tất**
+
+- Chưa tạo M0 thật vì thiếu CQ v1, data card, phép đo tài nguyên, headroom,
+  learner winner và candidate được duyệt. File spec example không phải evidence.
+
+**Bằng chứng cục bộ**
+
+- `tests/test_freeze_v4.py`: M0/M1 round-trip, tamper detection, role config,
+  candidate approval, thiếu M0 và CLI spec.
+- Lệnh dự kiến: `skq freeze-m0-v4 --config <dev-config> --spec <m0-spec.json>`.
+
+### 14/10/2026 — Môi trường Kaggle Free GPU T4 và cách tính tài nguyên
+
+**Xác nhận trực tiếp đã áp dụng**
+
+- Review yêu cầu kiểm kê `nvidia-smi`, CPU, RAM, VRAM, dung lượng, Python,
+  CUDA/thư viện, giới hạn phiên và số giờ khả dụng; không chỉ ghi “Kaggle T4”.
+- Mỗi run báo cả wall-clock và GPU-giờ cấp phát bằng wall-clock giờ nhân số GPU
+  được cấp; mức sử dụng GPU chỉ là diagnostic, không dùng để giảm GPU-giờ.
+- QĐ16 vẫn dùng ba cỡ 50k/200k/800k, ba replicate, trần selector ba giờ và giữ
+  status của từng phép đo riêng.
+
+**Lựa chọn môi trường của nhóm**
+
+- Nền chính được chọn là Kaggle Free với accelerator T4. Script kiểm tên GPU
+  thực tế của từng phiên và ghi số GPU được cấp; không hard-code T4 x2 vì số thiết
+  bị có thể khác giữa phiên dù lần chạy cũ đã thấy hai thiết bị CUDA.
+
+**Suy luận triển khai**
+
+- Nếu GPU không phải T4 hoặc không được cấp, environment manifest trả
+  `blocked_gpu_mismatch`; lỗi `nvidia-smi`, `lscpu`, `free` và `df` được giữ thành
+  từng command status, không gộp thành “môi trường lỗi”.
+- `environment_id` hash phần cứng/phần mềm/policy/giới hạn khai báo. Calibration
+  của một selector chỉ fit khi mọi observation cùng environment ID.
+
+**Chưa hoàn tất**
+
+- Chưa chạy cell kiểm kê trên phiên Kaggle cuối cùng, nên chưa có con số CPU,
+  RAM, VRAM, giới hạn phiên và giờ khả dụng thực tế. Đây vẫn là evidence bắt buộc
+  trước G09/M0.
+
+**Bằng chứng cục bộ**
+
+- `scripts/capture_kaggle_environment.py` và `tests/test_environment_manifest.py`.
+- `tests/test_resource_calibration.py` kiểm wall-clock/GPU-hour và calibration.
+
+### 14/10/2026 — Quality Gate Ledger G00 đến G16
+
+**Xác nhận trực tiếp đã áp dụng**
+
+- Mỗi gate có phase, điều kiện đạt, loại evidence và hành động khi fail riêng.
+- Audit luôn xuất đủ gate, kể cả gate chưa chạy; thiếu evidence không được xem là
+  pass. `missing_evidence`, `invalid_evidence`, `failed`, `blocked` và `incomplete`
+  là các trạng thái khác nhau.
+- Overall chỉ pass khi toàn bộ gate trong spec đều pass; không lấy trung bình và
+  không để gate mạnh che gate thất bại.
+
+**Suy luận triển khai**
+
+- Mapping gate → evidence ID là input được duyệt riêng. Auditor không tự đoán
+  evidence từ tên file, tránh gắn nhầm một pytest log cho nhiều yêu cầu.
+- Gate ledger có `audit_id` hash nội dung và được ghi không overwrite.
+
+**Chưa hoàn tất**
+
+- Chưa có evidence map thật nên hệ thống hiện phải báo `not_ready`, phù hợp trạng
+  thái nền đang chờ CQ v1 và các phép đo Kaggle.
+
+**Bằng chứng cục bộ**
+
+- `docs/quality_gates_v2.json`, `scripts/audit_quality_gates.py` và
+  `tests/test_quality_gates.py`.
+
 **Bằng chứng dự kiến**
 
 - `tests/test_method_fidelity.py`.
