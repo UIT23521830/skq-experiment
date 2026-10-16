@@ -20,8 +20,10 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import json
 import math
 import time
+from importlib import metadata
 from pathlib import Path
 from typing import Any
 
@@ -39,6 +41,47 @@ def _stable_top(values: np.ndarray, size: int, *, largest: bool) -> np.ndarray:
     values = np.asarray(values, dtype=np.float64)
     primary = -values if largest else values
     return np.lexsort((np.arange(len(values), dtype=np.int64), primary))[:size]
+
+
+def _verify_installed_goodpoints(expected_commit: str) -> dict[str, str]:
+    """Xác minh package Cython GoodPoints được build từ đúng commit đã khóa.
+
+    Checkout trong ``external/repos`` chỉ dùng để kiểm toán source/commit. Không
+    thêm checkout chưa build đó vào ``sys.path`` vì nó sẽ che package đã được
+    pip biên dịch và làm import ``goodpoints.ktc`` thất bại.
+    """
+    try:
+        distribution = metadata.distribution("goodpoints")
+    except metadata.PackageNotFoundError as error:
+        raise RuntimeError("Package GoodPoints đã build chưa được cài") from error
+    direct_url_raw = distribution.read_text("direct_url.json")
+    if not direct_url_raw:
+        raise RuntimeError(
+            "GoodPoints thiếu direct_url.json; không chứng minh được source runtime"
+        )
+    try:
+        direct_url = json.loads(direct_url_raw)
+    except json.JSONDecodeError as error:
+        raise RuntimeError("direct_url.json của GoodPoints không hợp lệ") from error
+    source_url = str(direct_url.get("url", ""))
+    vcs_info = direct_url.get("vcs_info") or {}
+    runtime_commit = str(vcs_info.get("commit_id", ""))
+    normalized_url = source_url.rstrip("/").removesuffix(".git").lower()
+    expected_url = "https://github.com/microsoft/goodpoints"
+    if normalized_url != expected_url:
+        raise RuntimeError(
+            f"GoodPoints runtime đến từ URL {source_url!r}, không phải {expected_url!r}"
+        )
+    if runtime_commit != expected_commit:
+        raise RuntimeError(
+            f"GoodPoints runtime ở commit {runtime_commit!r}, cần {expected_commit!r}"
+        )
+    return {
+        "distribution": "goodpoints",
+        "version": distribution.version,
+        "source_url": source_url,
+        "commit": runtime_commit,
+    }
 
 
 class ModerateDSTabularSelector(BaseSelector):
@@ -326,6 +369,7 @@ class KernelThinningClasswiseSelector(BaseSelector):
         requested = exact_budget_size(len(y), budget_ratio)
         try:
             upstream_commit = verify_locked_repo(self.repo)
+            runtime_provenance = _verify_installed_goodpoints(upstream_commit)
         except RuntimeError as error:
             return SelectionResult.failure(self.method_id, "blocked", requested, str(error))
         labels, counts = np.unique(y, return_counts=True)
@@ -337,8 +381,9 @@ class KernelThinningClasswiseSelector(BaseSelector):
             )
         started = time.perf_counter()
         try:
-            with prepend_sys_path(self.repo):
-                kt = importlib.import_module("goodpoints.kt")
+            # Import package đã được pip build từ commit khóa. Không prepend
+            # checkout source vì checkout này không chứa extension ``ktc``.
+            kt = importlib.import_module("goodpoints.kt")
             selected: list[np.ndarray] = []
             class_runs = []
             for position, (label, capacity, quota) in enumerate(zip(labels, counts, quotas)):
@@ -406,6 +451,7 @@ class KernelThinningClasswiseSelector(BaseSelector):
                 "native_equivalent": False,
                 "upstream_repo": "https://github.com/microsoft/goodpoints.git",
                 "upstream_commit": upstream_commit,
+                "runtime_package_provenance": runtime_provenance,
                 "upstream_function": "goodpoints.kt.thin(store_K=False, unique=True)",
                 "declared_patches": [
                     "largest-remainder quota theo lớp",

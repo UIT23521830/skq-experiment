@@ -7,6 +7,7 @@ import types
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from skq_exp.methods.adapted import modern_baselines as module
 from skq_exp.methods.adapted.modern_baselines import (
@@ -23,6 +24,25 @@ def _toy(seed: int = 7) -> tuple[np.ndarray, np.ndarray]:
     y = np.repeat(np.arange(3), 40)
     X[:, 0] += y
     return X, y
+
+
+def test_goodpoints_runtime_provenance_requires_locked_commit(monkeypatch) -> None:
+    class FakeDistribution:
+        version = "0.6.3"
+
+        @staticmethod
+        def read_text(name: str) -> str | None:
+            assert name == "direct_url.json"
+            return (
+                '{"url":"https://github.com/microsoft/goodpoints.git",'
+                '"vcs_info":{"vcs":"git","commit_id":"locked-commit"}}'
+            )
+
+    monkeypatch.setattr(module.metadata, "distribution", lambda _: FakeDistribution())
+    provenance = module._verify_installed_goodpoints("locked-commit")
+    assert provenance["commit"] == "locked-commit"
+    with pytest.raises(RuntimeError, match="cần 'other-commit'"):
+        module._verify_installed_goodpoints("other-commit")
 
 
 def test_moderate_ds_adapted_is_exact_and_declared(monkeypatch, tmp_path) -> None:
@@ -82,6 +102,16 @@ def test_dataoob_keeps_highest_values_without_proxy(monkeypatch, tmp_path) -> No
 
 def test_kernel_thinning_classwise_exact_budget_and_patch_log(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(module, "verify_locked_repo", lambda _: "goodpoints-commit")
+    monkeypatch.setattr(
+        module,
+        "_verify_installed_goodpoints",
+        lambda commit: {
+            "distribution": "goodpoints",
+            "version": "test",
+            "source_url": "https://github.com/microsoft/goodpoints.git",
+            "commit": commit,
+        },
+    )
     X, y = _toy()
     package = types.ModuleType("goodpoints")
     kt_module = types.ModuleType("goodpoints.kt")
@@ -100,5 +130,39 @@ def test_kernel_thinning_classwise_exact_budget_and_patch_log(monkeypatch, tmp_p
     assert result.realized_rows == 12
     assert len(np.unique(y[result.indices])) == 3
     assert result.diagnostics["upstream_commit"] == "goodpoints-commit"
+    assert result.diagnostics["runtime_package_provenance"]["commit"] == "goodpoints-commit"
     assert result.diagnostics["adapted"] is True
     assert result.budget_mode == "exact_classwise_prepool"
+
+
+def test_kernel_thinning_does_not_import_unbuilt_checkout(monkeypatch, tmp_path) -> None:
+    """Checkout audit không được che package Cython đã build trong site-packages."""
+    monkeypatch.setattr(module, "verify_locked_repo", lambda _: "goodpoints-commit")
+    monkeypatch.setattr(
+        module,
+        "_verify_installed_goodpoints",
+        lambda commit: {
+            "distribution": "goodpoints",
+            "version": "test",
+            "source_url": "https://github.com/microsoft/goodpoints.git",
+            "commit": commit,
+        },
+    )
+    monkeypatch.setattr(
+        module,
+        "prepend_sys_path",
+        lambda _path: (_ for _ in ()).throw(
+            AssertionError("Không được prepend checkout GoodPoints chưa build")
+        ),
+    )
+    X, y = _toy()
+    package = types.ModuleType("goodpoints")
+    kt_module = types.ModuleType("goodpoints.kt")
+    kt_module.thin = lambda points, rounds, *args, **kwargs: np.arange(
+        0, len(points), 2 ** rounds, dtype=np.int64,
+    )
+    package.kt = kt_module
+    monkeypatch.setitem(sys.modules, "goodpoints", package)
+    monkeypatch.setitem(sys.modules, "goodpoints.kt", kt_module)
+    result = KernelThinningClasswiseSelector(tmp_path, 11).select(X, y, 0.10)
+    assert result.status == "success"

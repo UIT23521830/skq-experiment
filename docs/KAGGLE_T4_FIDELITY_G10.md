@@ -33,6 +33,12 @@ python scripts/audit_method_fidelity.py \
 baseline success. Thiếu `faiss-cpu`, GoodPoints build lỗi, source sai commit hoặc
 upstream trả lỗi đều phải giữ trạng thái riêng và làm gate fail; không thay proxy.
 
+GoodPoints có Cython extension ``ktc``. Checkout trong ``external/repos`` dùng để
+đối chiếu URL và commit; runtime phải import package đã được pip build từ đúng
+commit khóa. Adapter đọc ``direct_url.json`` của distribution để kiểm tra URL và
+full commit trước khi gọi ``goodpoints.kt.thin``. Không đưa checkout chưa build
+vào ``sys.path`` vì làm như vậy sẽ che package runtime và tạo lỗi import giả.
+
 ## Evidence cần giữ private/Drive
 
 - `environment/kaggle_t4.json`;
