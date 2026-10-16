@@ -570,7 +570,7 @@ chứng confirmatory.
 - `tests/test_method_fidelity.py`.
 - Commit của lát metadata sau khi test đạt.
 
-### 14/10/2026 — Baseline fidelity G10 theo Review 12 §7.6/§7.11
+### 14–16/10/2026 — Baseline fidelity G10 theo Review 12 §7.6/§7.11
 
 **Xác nhận trực tiếp đã áp dụng**
 
@@ -596,22 +596,39 @@ chứng confirmatory.
 - GoodPoints được pin commit ở cả lock và dependency. Checkout dùng sparse path
   `goodpoints`; package cần build Cython trên Linux/Kaggle.
 
-**Kết quả local và điểm chưa đạt**
+**Kết quả local và Kaggle T4**
 
 - Structural audit đạt 10/10 method rows.
 - Toy local đạt 8/10: C01, C02, C03, Gonzalez, Moderate-DS, CCS, Data-OOB và
   CoreTab-XGB OVA đều success.
 - Kernel Thinning bị `blocked` vì Python local chưa build GoodPoints/Cython;
   BDIS bị `blocked` vì local thiếu `faiss-cpu`. Không phương pháp nào bị đổi tên
-  hoặc thay proxy. Vì vậy G10 strict hiện vẫn **chưa pass**.
-- Cần chạy `docs/KAGGLE_T4_FIDELITY_G10.md` trên phiên Kaggle Free T4 đã kiểm kê
-  để có evidence 10/10 trước M1.
+  hoặc thay proxy trong lượt local.
+- Lượt Kaggle T4 đầu ở commit `810fa453085c389a969727d6271b2a210f3e7045`
+  đạt 9/10; GoodPoints bị `blocked` vì checkout source chưa build che package
+  Cython runtime. Đây là lỗi tích hợp/import, không phải lỗi thuật toán. Adapter
+  được sửa để checkout chỉ kiểm URL/commit, còn runtime import package đã build
+  và xác minh `direct_url.json`; không thay Kernel Thinning và không dùng proxy.
+- Lượt rerun Kaggle Free T4 ở commit
+  `fb4bd97a47f1c897b029199a4648b9b39d9d0317` đạt **10/10 success**, strict
+  audit `passed`, `findings=[]`. Môi trường ghi nhận hai Tesla T4, CUDA sẵn sàng,
+  Python 3.13.15. GoodPoints runtime là distribution 0.6.3 từ URL chính thức và
+  full commit `181b12ade5dd02a61b65ed5cb9444c916fa3135f`.
+- BDIS chạy source chính thức thành công nhưng trả 68/120 dòng theo contract
+  `native_realized`. G10 chỉ xác nhận fidelity/interface; tỷ lệ realized này phải
+  tiếp tục được báo cáo, không được mô tả như so sánh exact-budget 120 dòng.
+- G10 hiện **PASS**. Kết quả toy 600 dòng, 12 feature, 3 lớp, budget 20% không
+  phải số liệu CQ v1 và không chứng minh phương pháp nào tốt hơn.
 
 **Bằng chứng code**
 
 - `docs/method_fidelity_v2.json`, `external/official_repos.lock.json`.
 - `scripts/run_method_fidelity_toys.py`, `scripts/audit_method_fidelity.py`.
 - `tests/test_modern_baselines.py`, `tests/test_fidelity_audit.py`.
+- `docs/evidence/manifests/EV-G10-FIDELITY-001.json`: manifest public chỉ chứa
+  provenance và SHA-256. Archive private có SHA-256
+  `4fae924fd14f2a0032ba03ccdb007bf5a1ad6fcf8984bb180417a1bb3c5ab0e5`;
+  không commit archive hoặc artifact mức dòng vào Git.
 
 ### 14/10/2026 — G00 config audit và missing/failed-run policy G13
 
