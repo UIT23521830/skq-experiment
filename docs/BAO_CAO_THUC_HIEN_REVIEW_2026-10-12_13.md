@@ -663,6 +663,47 @@ chứng confirmatory.
   `scripts/audit_statistics_readiness.py`, `docs/statistics_protocol_v2.json`.
 - `tests/test_completeness.py`, các test G00 trong `tests/test_config.py`.
 
+### 17/10/2026 — Nền bốn biến thể SKQ-PC trước khi chạy CQ v1
+
+**Xác nhận trực tiếp đã áp dụng**
+
+- Ba candidate đã được Review 12 nêu rõ được hiện thực riêng: `SKQ-PC`,
+  `SKQ-PC + LRQ-SQ` và `SKQ-PC-R`. Cả ba dùng Pool B, exact budget, tầng
+  `phase × class`, Gonzalez/Voronoi cell, RFF và simplex-QP; LRQ chỉ dùng OOF-LR
+  train-only, còn bản R chỉ thay herding bằng random trong cell.
+- Candidate chuẩn và các biến thể không tái sử dụng tên P01–P11 lịch sử. Mã mới
+  nằm ở `src/skq_exp/methods/proposed/skq_pc.py` để contract có thể kiểm toán.
+
+**Suy luận triển khai / deviation chờ duyệt**
+
+- Theo yêu cầu nội bộ ngày 17/10, nhóm giữ thêm candidate thứ tư
+  `SKQ-PC/CoreTab-cell`. Candidate này thay Gonzalez cell bằng leaf signature
+  CoreTab-XGB nhưng giữ tầng `phase × class`, herding và QP. Nó không phải
+  CoreTab native và chưa được review phê duyệt.
+- Candidate thứ tư mang role `experimental_candidate`, evidence role
+  `exploratory`, `confirmatory_allowed=false`. Config chỉ chấp nhận khi
+  `evidence_role=dev_selection`, `test_locked=true` và khai báo rõ
+  `pending_approval_acknowledged=true`. Freeze M0/M1 và confirmatory config vẫn
+  từ chối candidate này. Vì vậy code có thể chạy thăm dò dev nhưng chưa tạo claim.
+- Số cell khả thi trong mỗi tầng được khóa là
+  `min(128, quota tầng, population tầng)`. Với CoreTab, nếu số leaf lớn hơn quota,
+  các leaf nhỏ được gộp vào residual cell xác định. Đây là quy tắc triển khai cần
+  xin giảng viên xác nhận cùng việc cho phép candidate thứ tư.
+
+**Test/evidence**
+
+- `tests/test_skq_pc.py` kiểm exact budget, unique row, tám tầng khả dĩ của CQ v1
+  binary bốn phase, bảo toàn mass tầng, tính tái lập và dev-only gate.
+- Nhóm test tích hợp `test_skq_pc`, `test_method_fidelity`, `test_config`,
+  `test_freeze_v4`, `test_selectors`, `test_resources`, `test_full_panel` đạt
+  53/53 trên local. Đây là evidence nền code, chưa phải kết quả utility CQ v1.
+
+**Điểm chưa đạt / blocker**
+
+- Chưa có xác nhận của giảng viên cho candidate thứ tư; không được đưa vào M0/M1.
+- CQ v1 binary mới chưa có adapter/fingerprint/split manifest trong repo tại thời
+  điểm triển khai này, vì vậy chưa có run dev thật và chưa kết luận hiệu quả.
+
 ## Mẫu cho các mục tiếp theo
 
 ```text

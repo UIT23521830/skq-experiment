@@ -39,7 +39,7 @@ cáo thực hiện và không được tạo claim học thuật mới.
 | G00–G16/GATE-01 | V2 §23 | Suy luận triển khai theo review | Mỗi gate giữ điều kiện/evidence/fail action và trạng thái lỗi riêng | `experiments/quality_gates.py`, `docs/quality_gates_v2.json` | `tests/test_quality_gates.py`; evidence map thật còn thiếu | IMPLEMENTED_WAITING_EVIDENCE |
 | G10/FID-01 | Review 12 §7.6/§7.11 | Xác nhận trực tiếp + adapter khai báo | Khóa official source, commit, patch/adaptation và toy reproduction; không proxy | `official_repos.lock.json`, `method_fidelity_v2.json`, `run_method_fidelity_toys.py` | `EV-G10-FIDELITY-001`; commit `fb4bd97a47f1c897b029199a4648b9b39d9d0317`; strict audit 10/10, không finding | VERIFIED_G10_10_OF_10 |
 | G13/MISS-01 | Review 12 O2/O3 | Suy luận triển khai theo yêu cầu không bỏ lỗi | Failed/timeout/blocked giữ trong mẫu số; không impute 0; thiếu ô làm hypothesis not-estimable | `training/completeness.py`, `statistics_protocol_v2.json` | `tests/test_completeness.py` | IMPLEMENTED_TESTED |
-| INF-01 | V2 §13.3 | Suy luận triển khai | CoreTab-cell chỉ là candidate disabled chờ duyệt | registry | metadata test | IN_PROGRESS |
+| INF-01 | V2 §13.3 + deviation nội bộ 17/10 | Suy luận triển khai chờ duyệt | CoreTab-cell đã runnable ở dev-only; `test_locked=true`, explicit acknowledgement, không được freeze/confirmatory | `methods/proposed/skq_pc.py`, registry, config | `tests/test_skq_pc.py`, metadata/freeze gate tests | IMPLEMENTED_DEV_ONLY_WAITING_APPROVAL |
 | INF-02 | V2 §12 | Suy luận triển khai | Dùng prediction interval khi calibration | calibration | calibration tests | PLANNED |
 | INF-03 | V2 §20 | Suy luận triển khai | Audit cả Git history, không chỉ working tree | audit script | privacy evidence | IMPLEMENTED_FINDINGS |
 

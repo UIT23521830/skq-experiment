@@ -27,6 +27,7 @@ from .controls import (
 from .diagnostics import build_d02, build_d04
 from .native import AutoCoresetNativeSelector, BDISNativeSelector, CoreTabNativeSelector, CRAIGNativeSelector
 from .proposed.structured_kquad import StructuredKQuadSelector
+from .proposed.skq_pc import SKQPCSelector
 from .proposed.sharded_merge_reduce import ShardedMergeReduceSelector
 from .synthetic import TAMEOfficialGenerator, TDBenchGenerator
 
@@ -312,19 +313,49 @@ METHOD_SPECS = {
             fidelity_tier="proposed", evidence_role="historical", confirmatory_allowed=False,
         ),
         MethodSpec(
+            "skq_pc", "SKQ-PC", "proposed", "implemented",
+            note=(
+                "Candidate A được review xác nhận: phase×class, Gonzalez/Voronoi "
+                "trong tầng, RFF herding và simplex-QP bảo toàn mass tầng."
+            ),
+            fidelity_tier="proposed", task_contract="task_agnostic",
+            budget_contract="exact", evidence_role="dev_selection",
+            confirmatory_allowed=True, max_dev_configs=1,
+        ),
+        MethodSpec(
+            "skq_pc_lrq_sq", "SKQ-PC + LRQ-SQ", "proposed", "implemented",
+            note=(
+                "Candidate B được review xác nhận: SKQ-PC cộng OOF Logistic "
+                "Regression query loss train-only, alpha khóa ở 0.5."
+            ),
+            fidelity_tier="proposed", task_contract="task_agnostic",
+            budget_contract="exact", evidence_role="dev_selection",
+            confirmatory_allowed=True, max_dev_configs=1,
+        ),
+        MethodSpec(
+            "skq_pc_r", "SKQ-PC-R", "proposed", "implemented",
+            note=(
+                "Candidate C/ablation: giữ phase×class, Gonzalez cell và QP, "
+                "nhưng thay kernel herding bằng random không hoàn lại trong cell."
+            ),
+            fidelity_tier="proposed", task_contract="task_agnostic",
+            budget_contract="exact", evidence_role="dev_selection",
+            confirmatory_allowed=True, max_dev_configs=1,
+        ),
+        MethodSpec(
             "x_coretab_mc_cell",
             "SKQ-PC/CoreTab-cell (pending approval)",
             "experimental_candidate",
-            "experimental_disabled",
+            "implemented",
+            True,
             note=(
-                "Suy luận triển khai của nhóm: candidate multiclass dùng leaf-cell CoreTab; "
-                "không phải CoreTab native, không được vào config confirmatory trước phê duyệt."
+                "Suy luận triển khai của nhóm: thay Gonzalez cell bằng leaf signature "
+                "CoreTab-XGB, còn phase×class/herding/QP giữ nguyên; chạy dev-only, "
+                "không phải CoreTab native và không được freeze trước phê duyệt."
             ),
-            fidelity_tier="proposed",
-            task_contract="multiclass",
-            budget_contract="exact",
-            evidence_role="exploratory",
-            confirmatory_allowed=False,
+            fidelity_tier="proposed", task_contract="task_agnostic",
+            budget_contract="exact", evidence_role="exploratory",
+            confirmatory_allowed=False, max_dev_configs=1,
         ),
         MethodSpec(
             "d02_parent_structured_random", "Parent-Structured Random", "ablation", "implemented", True,
@@ -423,6 +454,22 @@ def build_selector(method_id: str, seed: int, *, n_components: int = 256, extern
             bandwidth_multiplier=float(options.get("bandwidth_multiplier", 1.0)),
             query_alpha=float(options.get("query_alpha", default_alpha)),
             budget_policy=str(options.get("budget_policy", "exact_total")),
+        )
+    if method_id in {"skq_pc", "skq_pc_lrq_sq", "skq_pc_r", "x_coretab_mc_cell"}:
+        variant = {
+            "skq_pc": "standard",
+            "skq_pc_lrq_sq": "lrq_sq",
+            "skq_pc_r": "random",
+            "x_coretab_mc_cell": "coretab_cell",
+        }[method_id]
+        return SKQPCSelector(
+            method_id,
+            variant=variant,
+            seed=seed,
+            n_components=int(options.get("n_components", n_components)),
+            max_cells_per_stratum=int(options.get("max_cells_per_stratum", 128)),
+            bandwidth_multiplier=float(options.get("bandwidth_multiplier", 1.0)),
+            query_alpha=float(options.get("query_alpha", 0.5)),
         )
     if method_id in {"p10_skq_mr_coretab_xgb", "p11_skq_mr_bdis"}:
         return ShardedMergeReduceSelector(

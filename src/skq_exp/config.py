@@ -140,6 +140,26 @@ class ExperimentConfig:
             if early_stopping.get("enabled", False) and early_stopping.get("source") != "dev":
                 raise ValueError("early stopping chỉ được phép dùng source=dev")
         options = self.method_options or {}
+        pending_candidates = [
+            method_id for method_id in self.method_ids
+            if METHOD_SPECS[method_id].role == "experimental_candidate"
+        ]
+        if pending_candidates:
+            if self.evidence_role != "dev_selection" or not self.test_locked:
+                raise ValueError(
+                    "G00: experimental candidate chỉ được chạy dev_selection khi test_locked=true"
+                )
+            missing_ack = [
+                method_id for method_id in pending_candidates
+                if not bool(options.get(method_id, {}).get(
+                    "pending_approval_acknowledged", False
+                ))
+            ]
+            if missing_ack:
+                raise ValueError(
+                    "G00: experimental candidate cần xác nhận pending_approval_acknowledged: "
+                    f"{missing_ack}"
+                )
         invalid_contracts = {}
         for method_id, method_config in options.items():
             if "allowed_learners" not in method_config:

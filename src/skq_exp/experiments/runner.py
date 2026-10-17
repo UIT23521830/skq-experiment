@@ -54,6 +54,7 @@ LRQ_METHODS = {
     "p05_skq_lrq_mq",
     "p08_skq_gonzalez_lrq_sq",
     "p09_skq_gonzalez_lrq_mq",
+    "skq_pc_lrq_sq",
 }
 GONZALEZ_PARENT_PREFIX = "gonzalez_pool_"
 
@@ -478,7 +479,7 @@ def _produce_or_block(
         options["source_method"] = frozen_roles["proposed_winner"]
     if method_id in LRQ_METHODS:
         gate_reason, lrq_provenance = _validate_lrq_gate(
-            config, options, freeze_manifest
+            config, options, freeze_manifest, method_id=method_id
         )
         if gate_reason is not None:
             return SelectionResult.failure(
@@ -834,9 +835,35 @@ def _nearest_gonzalez_center_ids(
     return assignments
 
 
-def _validate_lrq_gate(config, options, freeze_manifest):
+def _validate_lrq_gate(config, options, freeze_manifest, method_id: str | None = None):
     """Cho phép dev screen có kiểm soát, nhưng không hạ gate confirmatory/test."""
     parent_source = str(options.get("parent_source", ""))
+    if method_id == "skq_pc_lrq_sq":
+        if config.stage_id == "s1_screen":
+            if not config.test_locked:
+                return "SKQ-PC + LRQ-SQ dev screen yêu cầu test_locked=true", {}
+            return None, {
+                "selection_phase": "pre_freeze_dev_screen",
+                "parent_frozen": False,
+                "confirmatory_eligible": False,
+                "evaluation_split": "dev",
+                "query_contract": "OOF-LR train-only",
+            }
+        if freeze_manifest is None:
+            return "SKQ-PC + LRQ-SQ ngoài dev screen chỉ mở sau freeze", {}
+        selected = (
+            freeze_manifest.get("selected_candidate")
+            or (freeze_manifest.get("method_roles") or {}).get("proposed_winner")
+        )
+        if selected != method_id:
+            return "SKQ-PC + LRQ-SQ chưa phải proposed winner trong freeze", {}
+        return None, {
+            "selection_phase": "post_freeze_confirmatory",
+            "parent_frozen": True,
+            "confirmatory_eligible": True,
+            "evaluation_split": "test" if config.stage_id == "s2_confirm" else "dev",
+            "query_contract": "OOF-LR train-only",
+        }
     if config.stage_id == "s1_screen":
         if not config.test_locked:
             return "LRQ dev screen yêu cầu test_locked=true", {}

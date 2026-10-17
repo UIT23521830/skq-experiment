@@ -49,7 +49,7 @@ def estimate_selection_cost(
     if method_id == "d05_equal_group_weight":
         # D05 chỉ dùng lại index của source method rồi tính lại trọng số theo group.
         rff_bytes = 0
-    elif method_id.startswith(("p", "d02", "d04")):
+    elif method_id.startswith(("p", "d02", "d04", "skq_pc", "x_coretab_mc_cell")):
         operations += float(n_rows * n_features * rff_components)
         # Khi chưa có structure, giữ estimate global bảo thủ. Runner có thể hoãn
         # hạng herding bằng structured_work_rows=0; selector sẽ kiểm lại sau khi
@@ -80,6 +80,7 @@ def estimate_selection_cost(
     if method_id in {
         "p04_skq_lrq_sq", "p05_skq_lrq_mq",
         "p08_skq_gonzalez_lrq_sq", "p09_skq_gonzalez_lrq_mq",
+        "skq_pc_lrq_sq",
     }:
         operations += float(5 * n_rows * n_features * (3 if method_id.endswith("mq") else 1))
     working_bytes = int((base_bytes + rff_bytes) * 1.8)

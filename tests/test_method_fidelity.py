@@ -22,12 +22,24 @@ def test_historical_p_variants_are_not_confirmatory() -> None:
         assert METHOD_SPECS[method_id].confirmatory_allowed is False
 
 
-def test_pending_coretab_multiclass_candidate_is_disabled() -> None:
+def test_pending_coretab_cell_candidate_is_runnable_only_as_exploratory() -> None:
     spec = METHOD_SPECS["x_coretab_mc_cell"]
-    assert spec.status == "experimental_disabled"
+    assert spec.status == "implemented"
+    assert spec.role == "experimental_candidate"
     assert spec.evidence_role == "exploratory"
     assert spec.confirmatory_allowed is False
-    assert spec.task_contract == "multiclass"
+    assert spec.task_contract == "task_agnostic"
+    assert spec.needs_parent is True
+
+
+def test_three_reviewed_skq_pc_candidates_are_registered_for_dev_selection() -> None:
+    for method_id in ("skq_pc", "skq_pc_lrq_sq", "skq_pc_r"):
+        spec = METHOD_SPECS[method_id]
+        assert spec.status == "implemented"
+        assert spec.role == "proposed"
+        assert spec.evidence_role == "dev_selection"
+        assert spec.confirmatory_allowed is True
+        assert spec.max_dev_configs == 1
 
 
 def test_c01_c03_are_controls_not_proposed_methods() -> None:
