@@ -210,6 +210,11 @@ def load_processed(dataset_id: str, processed_root: str | Path, mmap: bool = Tru
         else None
     )
     for phase in range(1, 5):
+        dev_feature_path = root / f"X_dev_phase{phase}.npy"
+        dev_label_path = root / f"y_dev_phase{phase}.npy"
+        if dev_feature_path.exists() and dev_label_path.exists():
+            result[f"X_dev_phase{phase}"] = np.load(dev_feature_path, mmap_mode=mode)
+            result[f"y_dev_phase{phase}"] = np.load(dev_label_path, mmap_mode=mode)
         feature_path = root / f"X_test_phase{phase}.npy"
         label_path = root / f"y_test_phase{phase}.npy"
         if feature_path.exists() and label_path.exists():

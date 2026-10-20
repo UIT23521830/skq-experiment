@@ -291,7 +291,11 @@ def _plan(config: ExperimentConfig, *, include_cells: bool = False) -> dict:
             if "course_quality_med_v1" in config.dataset_ids else ["test"]
         )
     else:
-        evaluation_splits = ["dev"]
+        evaluation_splits = (
+            [f"dev_phase{phase}" for phase in range(1, 5)]
+            if any(dataset.startswith("course_quality_v1") for dataset in config.dataset_ids)
+            else ["dev"]
+        )
     result = {
         "experiment_id": config.experiment_id,
         "datasets": list(config.dataset_ids),

@@ -717,3 +717,36 @@ Kết quả:
 Ảnh hưởng claim:
 ```
 
+### 20/10/2026 — Tích hợp CQ v1 `phase_features_v2` ở chế độ development-only
+
+**Căn cứ xác nhận trực tiếp từ Review 12–13:** Pool B dùng đủ P1–P4 của train;
+selector SKQ-PC phân tầng phase × class; chọn candidate chỉ trên dev; test không
+được dùng để tune; tối đa ba candidate A/B/C; ID/target/target-derived không làm
+tọa độ selector.
+
+**Đã thực hiện:**
+
+- Đăng ký `course_quality_v1` với nhãn chính `y_alpha_1`; đăng ký riêng
+  `course_quality_v1_afelo0p1` cho sensitivity, không trộn hai định nghĩa nhãn.
+- Adapter đọc snapshot Parquet đã qua các validation của nhóm dữ liệu, tạo Pool B
+  994.608 dòng từ bốn phase train và giữ phase dưới dạng metadata cho C03/SKQ-PC.
+- Hai view hiện dùng cùng 56 feature số; loại `phase_fraction`, năm mã categorical,
+  `user_id`, `course_id`, mọi q/y và metadata khỏi hình học. Selected index vẫn
+  tham chiếu đúng row order của learner matrix.
+- Dev được đánh giá riêng P1, P2, P3, P4; config smoke có 6 method × 1 XGBoost ×
+  4 phase = 24 evaluation rows. Test vẫn `test_locked=true`.
+- Config development đầu tiên dùng đúng ba candidate Review nêu: `skq_pc`,
+  `skq_pc_lrq_sq`, `skq_pc_r`; thêm FullTrain-B, C02 và C03 làm đối chứng kỹ thuật.
+- Toàn bộ 148 test hiện tại và smoke thật C03 → LR → dev P1–P4 đều PASS.
+
+**Suy luận triển khai cần được báo rõ:** snapshot hiện chỉ có `course_id`, chưa có
+`course_root_id`. Adapter dùng hash `course_id` để audit split tạm thời và tự ghi
+`confirmatory_eligible=false`. Vì vậy run hiện tại chỉ kiểm tra tích hợp/dev, không
+được dùng để freeze M0/M1, mở test hay đưa ra claim xác nhận. Cần nhóm dữ liệu bổ
+sung ánh xạ `course_id -> course_root_id` trước confirmatory/bootstrap theo review.
+
+**Deviation preprocessing:** adapter tái sử dụng preprocessing train-only theo
+từng phase do snapshot cung cấp và ghi hash đầy đủ; chưa tự fit lại một scaler trên
+Pool B. Nếu giảng viên yêu cầu một preprocessing chung cho pooled phases thì phải
+đăng deviation, tạo adapter version mới và chạy lại dev — không sửa đè evidence.
+

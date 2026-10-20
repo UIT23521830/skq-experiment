@@ -385,6 +385,17 @@ def _evaluation_splits(
 ) -> tuple[str, ...]:
     """Chọn split theo stage; temporal CourseQuality bắt buộc đủ bốn phase."""
     if config.stage_id not in {"s2_confirm", "s4_temporal"}:
+        if dataset_id.startswith("course_quality_v1"):
+            dev_phases = tuple(
+                f"dev_phase{phase}"
+                for phase in range(1, 5)
+                if f"X_dev_phase{phase}" in data and f"y_dev_phase{phase}" in data
+            )
+            if len(dev_phases) != 4:
+                raise RuntimeError(
+                    "CQ v1 development phải đánh giá đủ dev P1-P4; test vẫn khóa"
+                )
+            return dev_phases
         return ("dev",)
     phases = tuple(
         f"test_phase{phase}"

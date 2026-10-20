@@ -60,6 +60,18 @@ DATASET_SPECS = {
             3_297_128, 59, 3,
             "provided_train_val_four_temporal_tests_test_locked",
         ),
+        DatasetSpec(
+            "course_quality_v1", "CourseQuality enrollment-phase v1", "Private group snapshot",
+            "private://phase_features_v2",
+            307_998, 56, 3,
+            "provided_course_disjoint_train_dev_test_pool_b_four_phases_test_locked",
+        ),
+        DatasetSpec(
+            "course_quality_v1_afelo0p1", "CourseQuality enrollment-phase v1 alpha=0.1",
+            "Private group snapshot", "private://phase_features_v2",
+            307_998, 56, 3,
+            "provided_course_disjoint_train_dev_test_pool_b_four_phases_test_locked_sensitivity",
+        ),
     ]
 }
 
