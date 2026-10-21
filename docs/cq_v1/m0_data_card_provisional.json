@@ -141,8 +141,35 @@
       "evidence": "rows/users/courses/classes emitted below"
     },
     "D02_id_only_probe": {
-      "status": "BLOCKED",
-      "reason": "model-ready snapshot has encoded IDs but probe model has not been run"
+      "status": "PASS",
+      "reason": "course-only dev Macro-F1 equals majority and all dev course IDs are unseen",
+      "evidence": {
+        "course_id_probe": {
+          "columns": [
+            "course_id"
+          ],
+          "macro_f1": 0.2515652592711511,
+          "unseen_rate_dev": {
+            "course_id": 1.0
+          }
+        },
+        "teacher_school_probe": {
+          "columns": [
+            "teacher_set_code",
+            "school_set_code"
+          ],
+          "macro_f1": 0.25094331324352925,
+          "unseen_rate_dev": {
+            "teacher_set_code": 0.0,
+            "school_set_code": 0.0
+          }
+        },
+        "new_learner_rate_dev": 0.9374435993296377,
+        "majority_reference": {
+          "majority_label": 2,
+          "macro_f1": 0.2515652592711511
+        }
+      }
     },
     "D03_missingness_probe": {
       "status": "BLOCKED",
@@ -153,8 +180,8 @@
       "reason": "requires FullTrain-B development run"
     },
     "D05_majority_baseline": {
-      "status": "READY",
-      "reason": "class counts available; model evaluation remains to run"
+      "status": "PASS",
+      "reason": "majority Macro-F1 emitted for P1-P4"
     },
     "D06_cutoff_manual_20": {
       "status": "BLOCKED",

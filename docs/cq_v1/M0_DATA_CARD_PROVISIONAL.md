@@ -26,10 +26,10 @@
 | Check | Status | Lý do/evidence |
 |---|---|---|
 | D01_size_distribution_split | PASS | rows/users/courses/classes emitted below |
-| D02_id_only_probe | BLOCKED | model-ready snapshot has encoded IDs but probe model has not been run |
+| D02_id_only_probe | PASS | course-only dev Macro-F1 equals majority and all dev course IDs are unseen |
 | D03_missingness_probe | BLOCKED | model-ready snapshot is already imputed; raw pre-imputation matrix is required |
 | D04_shuffled_labels | BLOCKED | requires FullTrain-B development run |
-| D05_majority_baseline | READY | class counts available; model evaluation remains to run |
+| D05_majority_baseline | PASS | majority Macro-F1 emitted for P1-P4 |
 | D06_cutoff_manual_20 | BLOCKED | requires raw event timestamps for 20 sampled enrollment-course pairs |
 | D07_weight_contract | PASS_CODE | covered by unit tests; run evidence still required |
 | D08_baseline_fidelity | DEFERRED_M1 | review explicitly allows completion before M1 |

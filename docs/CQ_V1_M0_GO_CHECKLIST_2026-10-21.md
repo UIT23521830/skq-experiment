@@ -11,7 +11,7 @@
 
 | Điều kiện | Trạng thái 21/10 | Evidence hiện có | Việc còn thiếu để GO |
 |---|---|---|---|
-| Data card, split và checks 1–7, 9–12 | PARTIAL | `docs/cq_v1/M0_DATA_CARD_PROVISIONAL.md`; D01, D09–D12 PASS; source validation 54 checks PASS | Xác nhận `course_id == course_root_id`; D02 ID probe, D03 missingness, D04 shuffle, D05 majority, D06 cutoff-20; D07 run evidence |
+| Data card, split và checks 1–7, 9–12 | PARTIAL | `docs/cq_v1/M0_DATA_CARD_PROVISIONAL.md`; D01, D02, D05, D09–D12 PASS; source validation 54 checks PASS | Xác nhận `course_id == course_root_id`; D03 missingness, D04 shuffle, D06 cutoff-20; D07 run evidence |
 | FullTrain-A/B dev, LR/XGB, UL/EC, natural/balanced | PARTIAL | FullTrain-B XGB balanced đã có trong screening; hai config M0 đã khóa | Chạy 4 ô FullTrain-B; tính UL/EC; FullTrain-A bị chặn vì snapshot không có full-behavior table |
 | Timing chứng minh phạm vi hoàn tất đúng hạn | READY_TO_RUN | QĐ16 code và unit test có sẵn | Kaggle T4: 50k/200k/800k × 3 cho ba candidate; lưu fit/gate |
 | Khung bài Introduction/Related Work/Problem/Data | READY | `paper/icc_review_m0_v1/main.tex` compile thành công | Nhóm tác giả điền nội dung sau khi duyệt protocol; chưa viết claim test |

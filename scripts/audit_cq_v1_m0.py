@@ -75,7 +75,14 @@ def _distribution(frame: pd.DataFrame, q_col: str, y_col: str, n_min: int) -> di
     }
 
 
-def build_audit(source: Path, *, target: str, n_min: int, root_policy: str) -> dict[str, Any]:
+def build_audit(
+    source: Path,
+    *,
+    target: str,
+    n_min: int,
+    root_policy: str,
+    probe_evidence: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     q_col, y_col = TARGETS[target]
     source_validation = json.loads((source / "validation.json").read_text(encoding="utf-8"))
     feature_spec = json.loads((source / "feature_columns.json").read_text(encoding="utf-8"))
@@ -124,12 +131,27 @@ def build_audit(source: Path, *, target: str, n_min: int, root_policy: str) -> d
     forbidden_in_x = sorted(target_columns & x_columns)
     source_false = sorted(key for key, value in source_validation.items() if value is False)
     root_confirmed = root_policy == "course_id_equals_root"
+    probe_evidence = probe_evidence or {}
+    d02 = probe_evidence.get("D02", {})
+    course_probe = d02.get("course_id_probe", {})
+    majority_probe = d02.get("majority_reference", {})
+    d02_pass = (
+        course_probe.get("unseen_rate_dev", {}).get("course_id") == 1.0
+        and abs(float(course_probe.get("macro_f1", -1)) - float(majority_probe.get("macro_f1", -2))) <= 1e-12
+    )
+    d04_probe = probe_evidence.get("D04", {})
+    d04_status = "PASS" if isinstance(d04_probe.get("macro_f1_mean"), (int, float)) else "BLOCKED"
+    d05_pass = set(probe_evidence.get("D05", {})) == set(PHASES)
     checks = {
         "D01_size_distribution_split": {"status": "PASS", "evidence": "rows/users/courses/classes emitted below"},
-        "D02_id_only_probe": {"status": "BLOCKED", "reason": "model-ready snapshot has encoded IDs but probe model has not been run"},
+        "D02_id_only_probe": {
+            "status": "PASS" if d02_pass else "BLOCKED",
+            "reason": "course-only dev Macro-F1 equals majority and all dev course IDs are unseen" if d02_pass else "run scripts/run_cq_v1_m0_probes.py",
+            "evidence": d02,
+        },
         "D03_missingness_probe": {"status": "BLOCKED", "reason": "model-ready snapshot is already imputed; raw pre-imputation matrix is required"},
-        "D04_shuffled_labels": {"status": "BLOCKED", "reason": "requires FullTrain-B development run"},
-        "D05_majority_baseline": {"status": "READY", "reason": "class counts available; model evaluation remains to run"},
+        "D04_shuffled_labels": {"status": d04_status, "reason": "XGBoost shuffled-label dev probe" if d04_status == "PASS" else "requires FullTrain-B development run"},
+        "D05_majority_baseline": {"status": "PASS" if d05_pass else "READY", "reason": "majority Macro-F1 emitted for P1-P4" if d05_pass else "class counts available; run probe script"},
         "D06_cutoff_manual_20": {"status": "BLOCKED", "reason": "requires raw event timestamps for 20 sampled enrollment-course pairs"},
         "D07_weight_contract": {"status": "PASS_CODE", "reason": "covered by unit tests; run evidence still required"},
         "D08_baseline_fidelity": {"status": "DEFERRED_M1", "reason": "review explicitly allows completion before M1"},
@@ -207,11 +229,18 @@ def main() -> int:
     parser.add_argument("--target", choices=sorted(TARGETS), default="afelo1")
     parser.add_argument("--n-min", type=int, default=30)
     parser.add_argument("--root-policy", choices=("pending", "course_id_equals_root"), default="pending")
+    parser.add_argument("--probe-evidence")
     args = parser.parse_args()
     source = Path(args.input_dir).resolve()
     output = Path(args.output_dir).resolve()
     output.mkdir(parents=True, exist_ok=True)
-    audit = build_audit(source, target=args.target, n_min=args.n_min, root_policy=args.root_policy)
+    probe_evidence = None
+    if args.probe_evidence:
+        probe_evidence = json.loads(Path(args.probe_evidence).read_text(encoding="utf-8"))
+    audit = build_audit(
+        source, target=args.target, n_min=args.n_min,
+        root_policy=args.root_policy, probe_evidence=probe_evidence,
+    )
     (output / "m0_data_card_provisional.json").write_text(json.dumps(audit, ensure_ascii=False, indent=2), encoding="utf-8")
     (output / "M0_DATA_CARD_PROVISIONAL.md").write_text(_markdown(audit), encoding="utf-8")
     print(json.dumps({"output": str(output), "confirmatory_eligible": audit["confirmatory_eligible"], "checks": {k: v["status"] for k, v in audit["checks"].items()}}, ensure_ascii=False, indent=2))
