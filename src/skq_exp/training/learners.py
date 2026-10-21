@@ -13,6 +13,7 @@ from typing import Any
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import StandardScaler
 
 
 @dataclass(frozen=True)
@@ -66,6 +67,9 @@ def build_learner(
         raise KeyError(f"Learner chưa đăng ký: {learner_id}")
     merged = {**DEFAULT_PARAMS.get(learner_id, {}), **(params or {})}
     if learner_id == "lr":
+        standardize = bool(merged.pop("standardize", False))
+        if standardize:
+            return StandardizedLogisticRegression(seed=seed, params=merged)
         return LogisticRegression(random_state=seed, **merged)
     if learner_id == "rf":
         return RandomForestClassifier(random_state=seed, n_jobs=max_threads, **merged)
@@ -92,6 +96,38 @@ def build_learner(
             input_dim, n_classes, seed=seed, max_threads=max_threads, **merged
         )
     raise RuntimeError(f"{learner_id} là appendix/resource-gated và chưa được mở")
+
+
+class StandardizedLogisticRegression:
+    """LR với scaler fit train-only; giữ API/cost fields mà evaluator cần.
+
+    Wrapper này không nhìn dev/test khi fit scaler. ``standardize`` là một phần
+    của learner config được lưu vào protocol hash, không phải tiền xử lý ngầm.
+    """
+
+    def __init__(self, *, seed: int, params: dict[str, Any]) -> None:
+        self.seed = seed
+        self.params = dict(params)
+
+    def fit(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        sample_weight: np.ndarray | None = None,
+    ) -> "StandardizedLogisticRegression":
+        self.scaler_ = StandardScaler()
+        transformed = self.scaler_.fit_transform(np.asarray(X))
+        self.model_ = LogisticRegression(random_state=self.seed, **self.params)
+        self.model_.fit(transformed, y, sample_weight=sample_weight)
+        self.classes_ = self.model_.classes_
+        self.n_iter_ = self.model_.n_iter_
+        return self
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        return self.model_.predict(self.scaler_.transform(np.asarray(X)))
+
+    def predict_proba(self, X: np.ndarray) -> np.ndarray:
+        return self.model_.predict_proba(self.scaler_.transform(np.asarray(X)))
 
 
 class WeightedMLPClassifier:

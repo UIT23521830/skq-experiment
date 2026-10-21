@@ -3,7 +3,8 @@
 Mỗi replicate lấy mẫu phân tầng phase×class chỉ từ train, rồi đo toàn bộ đường
 chọn của selector. Với LRQ-SQ, thời gian gồm cả tạo OOF-LR train-only vì đây là
 chi phí thực tế của selector. Script không đọc dev/test và không dùng operation
-count để loại run. Kết quả ghi observation thật, fit log--log và gate 3 giờ.
+count để loại run. Panel gồm đúng 10 selector cố định và ba candidate được
+review chấp thuận. Kết quả ghi observation thật, fit log--log và gate 3 giờ.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ import argparse
 import json
 import platform
 import subprocess
+import tarfile
 import threading
 import time
 from pathlib import Path
@@ -33,7 +35,24 @@ from skq_exp.methods import build_selector
 from skq_exp.methods.proposed.query_losses import make_oof_query_losses
 
 
-METHODS = ("skq_pc", "skq_pc_lrq_sq", "skq_pc_r")
+FIXED_METHODS = (
+    "c01_uniform_random",
+    "c02_stratified_random",
+    "c03_phase_class_random",
+    "a_coretab_xgb_ova",
+    "n_bdis_native",
+    "n_gcoreset_benchmark",
+    "b_moderate_ds_adapted",
+    "b_ccs_oof_xgb_adapted",
+    "b_dataoob_official",
+    "b_kernel_thinning_classwise",
+)
+CANDIDATE_METHODS = ("skq_pc", "skq_pc_lrq_sq", "skq_pc_r")
+METHODS = FIXED_METHODS + CANDIDATE_METHODS
+
+# Hiện repo chỉ có wrapper shard thật cho P10/P11. Không selector nào trong
+# panel QĐ16 được tự gắn nhãn shardable chỉ vì có thể chia mảng đầu vào.
+SHARDABLE_METHODS: frozenset[str] = frozenset()
 
 
 def _observation_payload(observations: list[CalibrationObservation]) -> list[dict[str, Any]]:
@@ -94,15 +113,70 @@ def _gpu() -> tuple[str | None, int | None, int]:
         return None, None, 0
 
 
-def _peak_rss(call: Callable[[], Any]) -> tuple[Any, float, int]:
+def _process_tree_rss(process: psutil.Process) -> tuple[int, set[int]]:
+    """Cộng RSS process cha và mọi process con còn sống tại thời điểm đo."""
+    processes = [process]
+    try:
+        processes.extend(process.children(recursive=True))
+    except psutil.Error:
+        pass
+    rss = 0
+    pids: set[int] = set()
+    for item in processes:
+        try:
+            rss += int(item.memory_info().rss)
+            pids.add(int(item.pid))
+        except psutil.Error:
+            continue
+    return rss, pids
+
+
+def _gpu_memory_for_pids(pids: set[int]) -> int | None:
+    """Đọc tổng VRAM của đúng process tree; None nghĩa là không đo được."""
+    if not pids:
+        return 0
+    try:
+        result = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-compute-apps=pid,used_gpu_memory",
+                "--format=csv,noheader,nounits",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return None
+    total_mib = 0.0
+    for line in result.stdout.splitlines():
+        if not line.strip():
+            continue
+        try:
+            raw_pid, raw_mib = [item.strip() for item in line.split(",", maxsplit=1)]
+            if int(raw_pid) in pids:
+                total_mib += float(raw_mib)
+        except (ValueError, TypeError):
+            continue
+    return int(total_mib * 1024**2)
+
+
+def _peak_resources(call: Callable[[], Any]) -> tuple[Any, float, int, int | None]:
+    """Đo wall time, RSS process-tree và VRAM process-tree trong cùng run."""
     process = psutil.Process()
-    peak = process.memory_info().rss
+    peak, initial_pids = _process_tree_rss(process)
+    peak_vram = _gpu_memory_for_pids(initial_pids)
     stop = threading.Event()
 
     def sample() -> None:
-        nonlocal peak
-        while not stop.wait(0.05):
-            peak = max(peak, process.memory_info().rss)
+        nonlocal peak, peak_vram
+        while not stop.wait(0.2):
+            rss, pids = _process_tree_rss(process)
+            peak = max(peak, rss)
+            measured_vram = _gpu_memory_for_pids(pids)
+            if measured_vram is not None:
+                peak_vram = max(peak_vram or 0, measured_vram)
 
     worker = threading.Thread(target=sample, daemon=True)
     worker.start()
@@ -113,8 +187,62 @@ def _peak_rss(call: Callable[[], Any]) -> tuple[Any, float, int]:
         elapsed = time.perf_counter() - started
         stop.set()
         worker.join(timeout=1.0)
-        peak = max(peak, process.memory_info().rss)
-    return result, elapsed, int(peak)
+        rss, pids = _process_tree_rss(process)
+        peak = max(peak, rss)
+        measured_vram = _gpu_memory_for_pids(pids)
+        if measured_vram is not None:
+            peak_vram = max(peak_vram or 0, measured_vram)
+    return result, elapsed, int(peak), peak_vram
+
+
+def _headroom_payload(path: Path) -> dict[str, Any]:
+    """Đọc headroom JSON trực tiếp hoặc từ archive Kaggle mà không bung test."""
+    if path.suffix.lower() == ".json":
+        return json.loads(path.read_text(encoding="utf-8"))
+    if not tarfile.is_tarfile(path):
+        raise ValueError(f"Headroom evidence phải là JSON hoặc tar archive: {path}")
+    with tarfile.open(path, "r:*") as archive:
+        matches = [
+            member for member in archive.getmembers()
+            if member.isfile() and member.name.endswith("headroom_decision.json")
+        ]
+        if len(matches) != 1:
+            raise ValueError(
+                f"Archive phải có đúng một headroom_decision.json, tìm thấy {len(matches)}"
+            )
+        stream = archive.extractfile(matches[0])
+        if stream is None:
+            raise ValueError("Không đọc được headroom_decision.json trong archive")
+        return json.loads(stream.read().decode("utf-8"))
+
+
+def _resolve_budget_ratio(explicit: float | None, headroom: str | None) -> tuple[float, dict[str, Any]]:
+    """Khóa rho từ evidence dev; explicit chỉ dùng khi không truyền headroom."""
+    if headroom:
+        path = Path(headroom).resolve()
+        payload = _headroom_payload(path)
+        ratio = float(payload["rho_star"])
+        test_is_locked = (
+            payload.get("test_locked") is True
+            or payload.get("test_data_read") is False
+        )
+        if payload.get("evidence_split") != "dev" or not test_is_locked:
+            raise ValueError("Headroom evidence phải là dev-only và chưa đọc test")
+        source = {
+            "mode": "headroom_evidence",
+            "path": str(path),
+            "rho_star": ratio,
+            "repository_commit": payload.get("repository_commit"),
+            "allowed_inputs": payload.get("allowed_inputs"),
+        }
+    elif explicit is not None:
+        ratio = float(explicit)
+        source = {"mode": "explicit_development_ratio", "rho_star": ratio}
+    else:
+        raise ValueError("Cần --headroom-decision hoặc --budget-ratio")
+    if not 0 < ratio <= 1:
+        raise ValueError(f"rho không hợp lệ: {ratio}")
+    return ratio, source
 
 
 def _stratified_indices(y: np.ndarray, phase: np.ndarray, rows: int, seed: int) -> np.ndarray:
@@ -137,15 +265,26 @@ def _run_selector(
     seed: int,
     budget: float,
     max_threads: int,
+    external_root: Path,
+    device: str,
 ):
-    options = {"n_components": 256, "query_alpha": 0.5, "oof_folds": 5}
+    options = {
+        "n_components": 256,
+        "query_alpha": 0.5,
+        "oof_folds": 5,
+        "n_jobs": max_threads,
+        "device": device,
+        "binary_options": {"n_jobs": max_threads},
+    }
     query = None
     query_meta = None
     if method_id == "skq_pc_lrq_sq":
         query, query_meta = make_oof_query_losses(
             X_learner, y, ("lr",), seed=seed, folds=5, max_threads=max_threads,
         )
-    selector = build_selector(method_id, seed, options=options)
+    selector = build_selector(
+        method_id, seed, external_root=external_root, options=options,
+    )
     return selector.select(
         X_selector, y, budget,
         phases=phase,
@@ -160,8 +299,13 @@ def main() -> int:
     parser.add_argument("--processed-root", default="data/processed")
     parser.add_argument("--dataset", default="course_quality_v1")
     parser.add_argument("--output", default="artifacts/cq_v1_m0_resource_calibration")
-    parser.add_argument("--budget-ratio", type=float, default=0.02)
+    parser.add_argument("--budget-ratio", type=float)
+    parser.add_argument(
+        "--headroom-decision",
+        help="JSON hoặc tar.gz chứa headroom_decision.json; ưu tiên hơn ratio nhập tay.",
+    )
     parser.add_argument("--method", action="append", choices=METHODS)
+    parser.add_argument("--external-root", default="external/repos")
     parser.add_argument("--max-threads", type=int, default=4)
     parser.add_argument("--replicates", type=int, default=3)
     parser.add_argument(
@@ -171,6 +315,9 @@ def main() -> int:
     args = parser.parse_args()
     if args.replicates != 3:
         raise ValueError("QĐ16 yêu cầu đúng ba replicate; không giảm trong evidence M0")
+    budget_ratio, budget_source = _resolve_budget_ratio(
+        args.budget_ratio, args.headroom_decision,
+    )
     data_root = Path(args.processed_root).resolve() / args.dataset
     X_learner_all = np.load(data_root / "X_train.npy", mmap_mode="r")
     X_selector_all = np.load(data_root / "X_selector_train.npy", mmap_mode="r")
@@ -182,6 +329,7 @@ def main() -> int:
             f"cần ít nhất {max(CALIBRATION_ROWS):,}"
         )
     gpu_name, vram_bytes, gpu_count = _gpu()
+    selector_device = "cuda" if gpu_count else "cpu"
     device = DeviceMetadata(
         cpu=platform.processor() or platform.machine(), gpu=gpu_name,
         ram_bytes=int(psutil.virtual_memory().total), vram_bytes=vram_bytes,
@@ -192,9 +340,22 @@ def main() -> int:
         accelerator_policy="allocated_t4_selector_may_be_cpu_bound" if gpu_count else "cpu",
     )
     output = Path(args.output).resolve()
+    external_root = Path(args.external_root).resolve()
     output.mkdir(parents=True, exist_ok=True)
     methods = tuple(args.method or METHODS)
-    all_results = {}
+    summary_path = output / "resource_decision_all.json"
+    all_results: dict[str, Any] = {}
+    if args.resume and summary_path.is_file():
+        previous = json.loads(summary_path.read_text(encoding="utf-8"))
+        if (
+            float(previous.get("budget_ratio", -1)) != budget_ratio
+            or int(previous.get("target_rows", -1)) != len(X_learner_all)
+        ):
+            raise ValueError(
+                "Không resume resource summary có rho/target_rows khác; "
+                "dùng output directory mới"
+            )
+        all_results.update(previous.get("methods", {}))
     for method_id in methods:
         checkpoint = output / f"observations_{method_id}.json"
         observations = (
@@ -219,14 +380,16 @@ def main() -> int:
                 continue
             print(f"WARMUP_START method={method_id} rows={rows}", flush=True)
             warm_index = _stratified_indices(np.asarray(y_all), np.asarray(phase_all), min(10_000, rows), 9900 + rows)
-            _, warm_seconds, _ = _peak_rss(lambda: _run_selector(
+            warm_result, warm_seconds, _, _ = _peak_resources(lambda: _run_selector(
                 method_id,
                 np.asarray(X_selector_all[warm_index]), np.asarray(X_learner_all[warm_index]),
                 np.asarray(y_all[warm_index]),
-                np.asarray(phase_all[warm_index]), 999, args.budget_ratio, args.max_threads,
+                np.asarray(phase_all[warm_index]), 999, budget_ratio, args.max_threads,
+                external_root, selector_device,
             ))
             print(
-                f"WARMUP_DONE method={method_id} rows={rows} seconds={warm_seconds:.3f}",
+                f"WARMUP_DONE method={method_id} rows={rows} "
+                f"status={warm_result.status} seconds={warm_seconds:.3f}",
                 flush=True,
             )
             for replicate in missing_replicates:
@@ -240,28 +403,48 @@ def main() -> int:
                 X_learner = np.asarray(X_learner_all[index])
                 y = np.asarray(y_all[index])
                 phase = np.asarray(phase_all[index])
-                result, steady, peak_rss = _peak_rss(lambda: _run_selector(
+                result, steady, peak_rss, peak_vram = _peak_resources(lambda: _run_selector(
                     method_id, X_selector, X_learner, y, phase, seed,
-                    args.budget_ratio, args.max_threads,
+                    budget_ratio, args.max_threads, external_root, selector_device,
                 ))
                 observation = CalibrationObservation(
                     selector_id=method_id, rows=rows,
-                    budget_rows=max(1, int(np.floor(rows * args.budget_ratio))),
+                    budget_rows=max(1, int(np.floor(rows * budget_ratio))),
                     replicate=replicate, warmup_seconds=warm_seconds,
                     steady_seconds=steady, peak_rss_bytes=peak_rss,
-                    peak_vram_bytes=None, device=device,
+                    peak_vram_bytes=peak_vram, device=device,
                     status="success" if result.status == "success" else result.status,
                 )
                 observations.append(observation)
                 observations.sort(key=lambda item: (item.rows, item.replicate))
                 atomic_json(checkpoint, _observation_payload(observations))
+                atomic_json(
+                    output / f"details_{method_id}_{rows}_{replicate}.json",
+                    {
+                        "method_id": method_id,
+                        "rows": rows,
+                        "replicate": replicate,
+                        "seed": seed,
+                        "status": result.status,
+                        "requested_rows": result.requested_rows,
+                        "realized_rows": result.realized_rows,
+                        "budget_mode": result.budget_mode,
+                        "diagnostics": result.diagnostics,
+                        "timings": result.timings,
+                        "steady_seconds": steady,
+                        "peak_rss_bytes": peak_rss,
+                        "peak_vram_bytes": peak_vram,
+                    },
+                )
                 print(
                     f"RUN_DONE method={method_id} rows={rows} replicate={replicate} "
                     f"status={result.status} seconds={steady:.3f} peak_rss={peak_rss}",
                     flush=True,
                 )
         fitted = fit_scaling_model(tuple(observations), target_rows=len(X_learner_all))
-        decision = gate_decision(fitted, supports_sharding=method_id in {"skq_pc", "skq_pc_r"})
+        decision = gate_decision(
+            fitted, supports_sharding=method_id in SHARDABLE_METHODS,
+        )
         all_results[method_id] = {"fit": fitted, "decision": decision}
         atomic_json(output / f"resource_fit_{method_id}.json", all_results[method_id])
         print(
@@ -269,15 +452,23 @@ def main() -> int:
             f"upper_seconds={decision.get('upper_prediction_seconds')}",
             flush=True,
         )
-    atomic_json(output / "resource_decision_all.json", {
+    atomic_json(summary_path, {
         "schema_version": 1,
         "test_data_read": False,
         "calibration_rows": list(CALIBRATION_ROWS),
         "replicates": 3,
-        "budget_ratio": args.budget_ratio,
+        "budget_ratio": budget_ratio,
+        "budget_source": budget_source,
         "target_rows": int(len(X_learner_all)),
         "selector_feature_count": int(X_selector_all.shape[1]),
         "learner_feature_count": int(X_learner_all.shape[1]),
+        "fixed_methods": list(FIXED_METHODS),
+        "candidate_methods": list(CANDIDATE_METHODS),
+        "expected_method_count": len(METHODS),
+        "measured_method_count": len(all_results),
+        "panel_complete": set(all_results) == set(METHODS),
+        "external_root": str(external_root),
+        "selector_device": selector_device,
         "methods": all_results,
     })
     print(json.dumps({method: value["decision"] for method, value in all_results.items()}, ensure_ascii=False, indent=2))

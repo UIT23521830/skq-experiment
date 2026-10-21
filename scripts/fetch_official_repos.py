@@ -6,6 +6,7 @@ nguyên; thư mục sai remote hoặc sai commit sẽ dừng để người dùn
 
 from __future__ import annotations
 
+import argparse
 import json
 import subprocess
 from pathlib import Path
@@ -47,8 +48,16 @@ def _validate_checkout_identity(name: str, target: Path, expected_url: str) -> N
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--repo", action="append", choices=tuple(LOCK),
+        help="Chỉ fetch repo được nêu; có thể lặp. Mặc định fetch toàn lock.",
+    )
+    args = parser.parse_args()
     ROOT.mkdir(parents=True, exist_ok=True)
-    for name, entry in LOCK.items():
+    selected = tuple(args.repo or LOCK.keys())
+    for name in selected:
+        entry = LOCK[name]
         target = ROOT / name
         if not target.exists():
             clone = ["git", "clone"]

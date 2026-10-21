@@ -15,6 +15,7 @@ from sklearn.exceptions import ConvergenceWarning
 from skq_exp.methods.result import SelectionResult
 from skq_exp.training import evaluator as evaluator_module
 from skq_exp.training.evaluator import fit_selection_learner
+from skq_exp.training.learners import StandardizedLogisticRegression
 
 
 class _EarlyStopLearner:
@@ -140,3 +141,14 @@ def test_lr_convergence_warning_is_preserved_as_cost_evidence(monkeypatch) -> No
     assert fitted.base_cost["fit_converged"] is False
     assert fitted.base_cost["optimizer_iterations"] == [2000]
     assert fitted.base_cost["convergence_warnings"] == ["optimizer reached max_iter"]
+
+
+def test_standardized_lr_fits_scaler_on_train_only() -> None:
+    X = np.asarray([[0.0, 100.0], [1.0, 90.0], [10.0, 0.0], [11.0, 10.0]])
+    y = np.asarray([0, 0, 1, 1])
+    learner = StandardizedLogisticRegression(
+        seed=11, params={"solver": "lbfgs", "max_iter": 200},
+    )
+    learner.fit(X, y, sample_weight=np.ones(len(y)))
+    assert np.allclose(learner.scaler_.mean_, X.mean(axis=0))
+    assert learner.predict_proba(X).shape == (4, 2)

@@ -12,8 +12,11 @@ from skq_exp.experiments.resource_calibration import (
     gate_decision,
 )
 from scripts.run_cq_v1_resource_calibration import (
+    CANDIDATE_METHODS,
+    FIXED_METHODS,
     _load_observations,
     _observation_payload,
+    _resolve_budget_ratio,
 )
 
 
@@ -93,3 +96,23 @@ def test_resource_checkpoint_round_trip_and_rejects_other_environment(tmp_path) 
         assert "environment khác" in str(error)
     else:
         raise AssertionError("Checkpoint không được trộn environment")
+
+
+def test_qd16_panel_has_exactly_ten_fixed_and_three_candidates() -> None:
+    assert len(FIXED_METHODS) == 10
+    assert len(CANDIDATE_METHODS) == 3
+    assert len(set(FIXED_METHODS + CANDIDATE_METHODS)) == 13
+
+
+def test_budget_ratio_is_read_from_locked_dev_headroom(tmp_path) -> None:
+    path = tmp_path / "headroom_decision.json"
+    path.write_text(json.dumps({
+        "evidence_split": "dev",
+        "test_data_read": False,
+        "rho_star": 0.005,
+        "repository_commit": "abc",
+        "allowed_inputs": ["FullTrain-B", "C02"],
+    }), encoding="utf-8")
+    ratio, source = _resolve_budget_ratio(0.02, str(path))
+    assert ratio == 0.005
+    assert source["mode"] == "headroom_evidence"
