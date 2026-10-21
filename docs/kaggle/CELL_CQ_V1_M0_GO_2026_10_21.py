@@ -1,6 +1,6 @@
 # ============================================================
 # CQ V1 — M0 GO EVIDENCE — KAGGLE T4 — DEV ONLY
-# Commit pin: 52ba567a620a727e3896124c1f32b5b939954a9b
+# Commit pin: e9b60aad6b832dcb0469bf652a5aa5810d024496
 # Không mở test metric; chỉ audit split metadata theo data card.
 # ============================================================
 
@@ -18,7 +18,7 @@ from kaggle_secrets import UserSecretsClient
 
 REPO_URL = "https://github.com/UIT23521830/skq-experiment.git"
 BRANCH = "cq-v1-protocol-fixes"
-EXPECTED_COMMIT = "52ba567a620a727e3896124c1f32b5b939954a9b"
+EXPECTED_COMMIT = "e9b60aad6b832dcb0469bf652a5aa5810d024496"
 KAGGLE_DATASET = Path("/kaggle/input/datasets/hoangzyyng/cq-v1-phase-features-v2")
 WORKING = Path("/kaggle/working")
 REPO = WORKING / "skq_experiment"
