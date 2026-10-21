@@ -11,10 +11,10 @@
 
 | Điều kiện | Trạng thái 21/10 | Evidence hiện có | Việc còn thiếu để GO |
 |---|---|---|---|
-| Data card, split và checks 1–7, 9–12 | PARTIAL | `docs/cq_v1/M0_DATA_CARD_PROVISIONAL.md`; D01, D02, D05, D09–D12 PASS; source validation 54 checks PASS | Xác nhận `course_id == course_root_id`; D03 missingness, D04 shuffle, D06 cutoff-20; D07 run evidence |
-| FullTrain-A/B dev, LR/XGB, UL/EC, natural/balanced | PARTIAL | FullTrain-B XGB balanced đã có trong screening; hai config M0 đã khóa | Chạy 4 ô FullTrain-B; tính UL/EC; FullTrain-A bị chặn vì snapshot không có full-behavior table |
-| Timing chứng minh phạm vi hoàn tất đúng hạn | READY_TO_RUN | QĐ16 code và unit test có sẵn | Kaggle T4: 50k/200k/800k × 3 cho ba candidate; lưu fit/gate |
-| Khung bài Introduction/Related Work/Problem/Data | READY | `paper/icc_review_m0_v1/main.tex` compile thành công | Nhóm tác giả điền nội dung sau khi duyệt protocol; chưa viết claim test |
+| Data card, split và checks 1–7, 9–12 | PARTIAL | `docs/cq_v1/M0_DATA_CARD_PROVISIONAL.md`; D01, D02, D04, D05, D07, D09–D12 có evidence; headroom suite 54/54 PASS | Xác nhận `course_id == course_root_id`; D03 missingness và D06 cutoff-20 cần raw data |
+| FullTrain-A/B dev, LR/XGB, UL/EC, natural/balanced | PARTIAL | Bốn ô FullTrain-B và UL/EC provisional đã có; natural XGB tốt nhất trước A8 | FullTrain-A bị chặn vì thiếu full-behavior table; LR cũ không hội tụ, cần tuning dev-only; EC chờ chốt group unit |
+| Timing chứng minh phạm vi hoàn tất đúng hạn | PARTIAL 9/13 | Chín selector đã đủ 50k/200k/800k × 3 tại `rho*=0,5%`; QĐ16 pytest 17/17 PASS | Khôi phục archive đã kiểm kê; xử lý Kernel Thinning có timeout và chạy 3 candidate; tính upper-bound schedule dev/test |
+| Khung bài Introduction/Related Work/Problem/Data | PARTIAL | `paper/icc_review_m0_v1/main.tex` compile thành công và đã có bảng headroom dev-only | Introduction/Related Work/Problem/Data vẫn còn placeholder, nhóm tác giả phải điền nội dung thật; chưa viết claim test |
 
 ## Số liệu data card cần giảng viên chốt
 
@@ -29,10 +29,10 @@
 
 ## Thứ tự chạy trong hơn 20 giờ còn lại
 
-1. Chạy FullTrain-B natural và balanced với LR/XGB trên dev; xuất probabilities.
-2. Khi có xác nhận root, tính UL/EC bằng PCC và CC sensitivity. Nếu chưa có,
-   vẫn tính `provisional_course_id` nhưng không dùng làm confirmatory evidence.
-3. Chạy resource calibration QĐ16 trên Kaggle T4; không giảm ba replicate.
+1. Chạy LR tuning dev-only tối đa tám cấu hình; không dùng LR cũ chưa hội tụ để chốt policy.
+2. Khi có xác nhận root, khóa UL/EC bằng PCC và CC sensitivity. Số hiện tại theo
+   `provisional_course_id` không phải confirmatory evidence.
+3. Chạy resource calibration QĐ16 trên Kaggle T4 tại `rho*=0,5%`; không giảm ba replicate và không tái sử dụng bảng 2% làm quyết định chính.
 4. Tổng hợp M0 packet: data card, checks, FullTrain table, endpoint table,
    resource decision, paper skeleton, commit/tag và danh sách blocker.
 5. Không chạy selector bảng chính mới, không mở test, không freeze M1 ở M0.
@@ -40,6 +40,10 @@
 Lưu ý: screening commit `46f733a` dùng 56 feature cho cả learner và selector,
 không đúng O17/QĐ3. Chỉ các run từ commit dual-view trở đi mới được dùng cho
 quyết định M0/M1; số cũ giữ như evidence chẩn đoán, không xóa.
+
+Headroom dual-view tại commit `9b07f6f` đã hoàn tất 52/52 evaluation và 54/54
+pytest, chọn `rho*=0,5%` bằng fallback đăng ký. Đây là PASS cho bước chọn ngân
+sách QĐ12, không phải PASS cho toàn M0.
 
 ## Blocker cần phản hồi ngoài code
 

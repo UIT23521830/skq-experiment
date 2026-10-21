@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "report_date": "2026-10-21",
+  "evidence_id": "EV-CQ-M0-HEADROOM-QD12-20261021",
+  "status": "PASS_QD12_ONLY",
+  "overall_m0_status": "PARTIAL",
+  "source_archive": "../../../results/cq_v1/skq_cq_v1_m0_headroom_2026_10_21.tar.gz",
+  "source_archive_sha256": "2839B7D1AF1284999DD1AC1ED406058A9D875E7048A5FB77E2C82AD3EE4EE4A3",
+  "source_archive_size_bytes": 15588442,
+  "repository_commit": "9b07f6f769d8504a2555bf6608411c8f5131f8be",
+  "scope": "M0_QD12_development_only",
+  "test_metrics_opened": false,
+  "evaluation_expected": 52,
+  "evaluation_success": 52,
+  "pytest_total": 54,
+  "pytest_failures": 0,
+  "pytest_errors": 0,
+  "rho_star": 0.005,
+  "selection_rule": "fallback_to_smallest_when_no_ratio_meets_registered_gap_0.01",
+  "supersedes_headroom_ratio": 0.02,
+  "does_not_close": [
+    "QD16_resource_gate",
+    "FullTrain-A",
+    "LR_tuning",
+    "group_unit_confirmation",
+    "raw_missingness_and_cutoff_checks",
+    "M1_freeze",
+    "test_opening"
+  ]
+}

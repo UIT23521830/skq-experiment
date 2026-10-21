@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "evidence_split": "dev",
+  "allowed_inputs": ["FullTrain-B", "C02"],
+  "full_train_b_ul": 0.6543378153990446,
+  "gap": 0.01,
+  "ratios": {
+    "0.005": {
+      "seed_values": {"11": 0.6690188481286358, "29": 0.6540933469007036, "47": 0.6273459835586476},
+      "mean": 0.6501527261959956,
+      "delta_full_minus_c02": 0.004185089203048942,
+      "eligible": false
+    },
+    "0.01": {
+      "seed_values": {"11": 0.6675072594556839, "29": 0.6566195577061764, "47": 0.6414115829636926},
+      "mean": 0.6551794667085177,
+      "delta_full_minus_c02": -0.0008416513094731126,
+      "eligible": false
+    },
+    "0.02": {
+      "seed_values": {"11": 0.6363127349396686, "29": 0.6642444090792982, "47": 0.6412906749437957},
+      "mean": 0.6472826063209208,
+      "delta_full_minus_c02": 0.007055209078123736,
+      "eligible": false
+    },
+    "0.05": {
+      "seed_values": {"11": 0.6404066976140732, "29": 0.6679565838065371, "47": 0.6476396401802061},
+      "mean": 0.6520009738669388,
+      "delta_full_minus_c02": 0.0023368415321057823,
+      "eligible": false
+    }
+  },
+  "rho_star": 0.005,
+  "fallback_to_smallest": true,
+  "secondary_descriptive_ratio": 0.05,
+  "protocol_id": "cq_v1_m0_headroom_qd12_v1",
+  "test_data_read": false,
+  "test_locked": true,
+  "phase_aggregation": "mean_P1_P4_within_seed",
+  "replicate_unit": "selector_seed",
+  "learner_id": "xgb",
+  "class_weight_policy": "natural",
+  "repository_commit": "9b07f6f769d8504a2555bf6608411c8f5131f8be",
+  "source_archive": "skq_cq_v1_m0_headroom_2026_10_21.tar.gz"
+}

@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "report_date": "2026-10-21",
+  "evidence_id": "EV-CQ-M0-QD16-PARTIAL-20261021",
+  "status": "PARTIAL_9_OF_13",
+  "source_archive": "../../../results/cq_v1/skq_cq_v1_m0_qd16_resource_rhostar.tar.gz",
+  "source_archive_sha256": "83BEAA285714AB642B722DFDC9E816B38193833D9FB44F73E39E17218D04ECAA",
+  "source_archive_size_bytes": 764854,
+  "repository_commit": "f29ad5b79a8a257f094177afa72b936f530bac56",
+  "scope": "M0_QD16_train_only_resource_calibration",
+  "test_metrics_opened": false,
+  "budget_ratio": 0.005,
+  "calibration_rows": [50000, 200000, 800000],
+  "replicates_per_size": 3,
+  "expected_method_count": 13,
+  "completed_method_count": 9,
+  "pytest": {"tests": 17, "failures": 0, "errors": 0, "skipped": 0},
+  "completed_methods": {
+    "c01_uniform_random": {"upper_seconds": 0.002, "upper_rss_gib": 1.303},
+    "c02_stratified_random": {"upper_seconds": 0.021, "upper_rss_gib": 1.287},
+    "c03_phase_class_random": {"upper_seconds": 0.932, "upper_rss_gib": 1.367},
+    "a_coretab_xgb_ova": {"upper_seconds": 5216.483, "upper_rss_gib": 4.004},
+    "n_bdis_native": {"upper_seconds": 427.942, "upper_rss_gib": 2.050},
+    "n_gcoreset_benchmark": {"upper_seconds": 2128.576, "upper_rss_gib": 1.876},
+    "b_moderate_ds_adapted": {"upper_seconds": 2.742, "upper_rss_gib": 2.917},
+    "b_ccs_oof_xgb_adapted": {"upper_seconds": 58.719, "upper_rss_gib": 2.414},
+    "b_dataoob_official": {"upper_seconds": 593.042, "upper_rss_gib": 20.821}
+  },
+  "missing_methods": [
+    "b_kernel_thinning_classwise",
+    "skq_pc",
+    "skq_pc_lrq_sq",
+    "skq_pc_r"
+  ],
+  "resource_schedule_present": false,
+  "qd16_pass": false
+}

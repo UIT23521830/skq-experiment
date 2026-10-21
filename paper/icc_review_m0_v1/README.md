@@ -11,3 +11,13 @@ Các điều kiện để đổi placeholder thành nội dung:
 3. Resource calibration QĐ16 hoàn tất trên Kaggle T4.
 4. Novelty ledger có truy vấn, ngày tra cứu và nguồn xác minh.
 5. Candidate cuối được freeze tại M1 trước khi mở test.
+
+## Evidence đã gắn vào bản ngày 21/10/2026
+
+- Bảng headroom QĐ12 trong `main.tex` chỉ dùng development evidence.
+- Archive bất biến:
+  `../../results/cq_v1/skq_cq_v1_m0_headroom_2026_10_21.tar.gz`.
+- Manifest và checksum gửi kèm nằm trong `evidence/`.
+- Quyết định hiện hành là `rho*=0,5%` theo fallback đã đăng ký; bảng timing cũ
+  ở 2% chỉ là evidence lịch sử và không đóng QĐ16.
+- Trạng thái tổng thể vẫn là `PARTIAL`, chưa phải GO M0 và chưa được mở test.

@@ -14,6 +14,38 @@
 Archive ghi `success` cho toàn bộ bước 00--10. Điều này xác nhận pipeline đã chạy
 hết, không xác nhận rằng toàn bộ tiêu chí GO M0 đã đạt.
 
+### 1.1. Evidence headroom QĐ12 bổ sung cùng ngày
+
+- Archive: `results/cq_v1/skq_cq_v1_m0_headroom_2026_10_21.tar.gz`.
+- SHA-256: `2839B7D1AF1284999DD1AC1ED406058A9D875E7048A5FB77E2C82AD3EE4EE4A3`.
+- Kích thước: 15.588.442 byte.
+- Commit thực nghiệm: `9b07f6f769d8504a2555bf6608411c8f5131f8be`.
+- Phạm vi: FullTrain-B và C02, development-only, XGBoost natural, bốn phase,
+  selector seed 11/29/47; test không được đọc để tính metric.
+- Completeness: 52/52 evaluation thành công; 54/54 pytest contract đạt.
+- Kết quả: không rho nào trong `0,5/1/2/5%` đạt gap đăng ký `0,01`; fallback
+  chọn `rho*=0,5%`.
+
+Evidence này đóng hạng mục chọn rho của QĐ12. Nó không đóng QĐ16, vì timing cũ
+đo ở 2% và mới có ba candidate, trong khi QĐ16 phải đo 10 selector cố định cộng
+ba candidate tại rho vừa chốt.
+
+### 1.2. Checkpoint QĐ16 tại rho mới
+
+- Archive: `results/cq_v1/skq_cq_v1_m0_qd16_resource_rhostar.tar.gz`.
+- SHA-256: `83BEAA285714AB642B722DFDC9E816B38193833D9FB44F73E39E17218D04ECAA`.
+- Kích thước: 764.854 byte.
+- Commit thực nghiệm: `f29ad5b79a8a257f094177afa72b936f530bac56`.
+- Phạm vi: train-only, `rho*=0,5%`, 50k/200k/800k x ba replicate.
+- Completeness: 9/13 phương pháp fitted; 17/17 pytest đạt; test metric không mở.
+- Archive không có observation Kernel Thinning và chưa có resource schedule.
+
+Các upper prediction đáng chú ý trong phần hoàn tất: CoreTab-XGB OVA
+`5.216,48 s`, GCoreSet `2.128,58 s`, Data-OOB `593,04 s`, BDIS `427,94 s`.
+Data-OOB có upper peak RSS `20,82 GiB`. Chưa phương pháp hoàn tất nào vượt trần
+ba giờ, nhưng không được ghi PASS QĐ16 cho tới khi xử lý Kernel Thinning, ba
+candidate SKQ và non-selector overhead.
+
 ## 2. Phát hiện lỗi endpoint và cách sửa
 
 Artifact endpoint trong archive gốc ghi `UL=0` vì `y_true/y_pred` được lưu dưới
@@ -103,6 +135,8 @@ freeze; không tăng `max_iter` tùy tiện và không dùng test.
 ## 6. Hiệu chuẩn tài nguyên QĐ16
 
 Mỗi candidate đã đo tại 50k/200k/800k, ba replicate, warm-up riêng, rho=2%.
+Sau kết quả QĐ12 bổ sung, bảng dưới chỉ còn là calibration lịch sử và không được
+dùng làm quyết định QĐ16 tại `rho*=0,5%`.
 
 | Candidate | Dự báo toàn Pool B | Upper diagnostic | Peak RSS dự báo | Peak RSS upper | Quyết định |
 |---|---:|---:|---:|---:|---|
@@ -138,9 +172,10 @@ UL/EC đã sửa, A8, ba candidate timing và code/test nền.
 Còn thiếu trước khi trình GO:
 
 1. FullTrain-A trên cùng dev và feature contract.
-2. Headroom đầy đủ C02: bốn rho `0.5/1/2/5%` x seed `11/29/47`, sau đó chốt
-   `rho*` chỉ từ FullTrain-B và C02.
-3. Timing của 10 selector cố định ở `rho*`; ba candidate đã xong.
+2. ~~Headroom đầy đủ C02~~: đã hoàn tất; `rho*=0,5%` theo fallback đăng ký.
+3. Hoàn tất bốn phương pháp còn thiếu của timing `rho*=0,5%`: Kernel Thinning và
+   ba candidate SKQ; checkpoint hiện có 9/13. Timing ba candidate ở 2% không
+   thay thế lượt đo này.
 4. LR hội tụ theo tuning dev-only hoặc ghi loại LR khỏi evidence quyết định theo
    protocol đã được duyệt.
 5. JUnit Kaggle của hai nhóm contract `cq_protocol` và `cq_patch_1013`.
@@ -149,12 +184,11 @@ Còn thiếu trước khi trình GO:
    selector.
 
 Không cần chạy lại toàn bộ archive chỉ để sửa UL. Có thể tái tính endpoint từ
-prediction hiện có. Lượt Kaggle tiếp theo nên dành cho FullTrain-A, headroom còn
-thiếu, LR convergence và timing 10 selector; tuyệt đối chưa mở test metric.
+prediction hiện có. Lượt Kaggle tiếp theo nên dành cho timing QĐ16 tại
+`rho*=0,5%` và LR tuning; FullTrain-A tiếp tục chờ đúng nguồn dữ liệu. Tuyệt đối
+chưa mở test metric.
 
-Code đã chuẩn bị một cell headroom độc lập, bốn config C02 và script quyết định
-strict để chạy đúng 1 FullTrain-B XGB + 4 rho x 3 seed. Policy trong cell được
-ghi là `natural_provisional_pending_supervisor_confirmation`: kết quả có thể dùng
-làm evidence dev, nhưng không tự động biến thành policy freeze trước khi giảng
-viên xác nhận. Cell này cũng chạy bộ pytest M0 và đóng gói JUnit XML, nên không
-cần chạy lại calibration ba candidate chỉ để bổ sung evidence kiểm thử.
+Cell headroom độc lập đã chạy xong và đóng gói JUnit XML. Policy vẫn được ghi là
+`natural_provisional_pending_supervisor_confirmation`: kết quả được dùng để chốt
+rho development theo quy tắc đăng ký, nhưng không tự động biến class-weight
+policy thành policy freeze trước khi giảng viên xác nhận.

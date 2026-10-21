@@ -4,19 +4,21 @@
 
 **Nhánh thực hiện:** `cq-v1-protocol-fixes`
 
-**Commit dùng cho thực nghiệm CQ v1 hiện tại:** `46f733a55f754b699656a0e69c1e24911d79891d`
-**Phạm vi báo cáo:** Những hạng mục đã có bằng chứng đến hết vòng screening CQ v1 trên dev. Các hạng mục chưa đủ bằng chứng được ghi rõ là chưa hoàn tất; báo cáo không sử dụng kết quả test CQ v1.
+**Commit dùng cho headroom M0 hiện tại:** `9b07f6f769d8504a2555bf6608411c8f5131f8be`
+
+**Commit screening lịch sử:** `46f733a55f754b699656a0e69c1e24911d79891d`
+**Phạm vi báo cáo:** Những hạng mục đã có bằng chứng đến hết FullTrain-B, audit M0 và headroom QĐ12 trên dev. Các hạng mục chưa đủ bằng chứng được ghi rõ là chưa hoàn tất; báo cáo không sử dụng kết quả test CQ v1.
 
 ## 1. Kết luận và đề nghị hiện tại
 
-Nhóm đã chuyển được trọng tâm thực nghiệm từ Adult/CQ_med sang CQ v1 ở cấp lượt ghi danh và đã chạy vòng development đầu tiên theo bốn giai đoạn P1-P4. Test CQ v1 vẫn khóa. Quy tắc headroom chỉ dùng FullTrain-B và C02 trên dev đã chọn ngân sách chính tạm thời là `rho*=2%`. Ở ngân sách này, 64/64 lượt đánh giá của sáu cấu hình đều thành công trên XGBoost với ba selector seed `11, 29, 47`.
+Nhóm đã chuyển được trọng tâm thực nghiệm từ Adult/CQ_med sang CQ v1 ở cấp lượt ghi danh và đã chạy vòng development đầu tiên theo bốn giai đoạn P1--P4. Test CQ v1 vẫn khóa. Lượt headroom M0 mới, đúng dual-view và chỉ dùng FullTrain-B cùng C02 trên dev, đã hoàn tất 52/52 lượt đánh giá và 54/54 kiểm thử contract. Không mức ngân sách nào thỏa ngưỡng chênh lệch đăng ký `0,01`; quy tắc fallback vì vậy chọn ngân sách nhỏ nhất `rho*=0,5%`. Kết quả này thay thế quyết định headroom `2%` trước đây. Vòng screening sáu cấu hình tại `2%` vẫn được giữ làm evidence chẩn đoán lịch sử, không dùng để chốt M1.
 
 Kết quả hiện tại chưa đủ để chọn phương pháp cuối cùng hoặc mở test. `SKQ-PC-LRQ-SQ` là ứng viên SKQ tốt nhất về Macro-F1, MCC và log loss, nhưng không cải thiện recall của lớp hiếm và tốn thời gian chọn mẫu cao hơn C03 rất nhiều. Sau audit M0, nhóm còn phát hiện screening ở commit `46f733a` đã dùng 56 feature hành vi cho cả selector và learner, trong khi O17/QĐ3 yêu cầu learner giữ các mã tĩnh của TEMPO-DQ. Vì vậy vòng screening này chỉ còn là evidence chẩn đoán lịch sử và phải chạy lại sau sửa dual-view; chưa được dùng để chọn winner M1.
 
 Hai blocker chính của confirmatory là:
 
 1. Snapshot chưa có `course_root_id`, nên chưa thể chứng minh disjoint theo khóa gốc hoặc chạy cluster bootstrap đúng đơn vị khi một khóa có nhiều lần mở.
-2. Vòng hiện tại mới có XGBoost và endpoint cấp người học. Endpoint cấp khóa học `EC`, resource calibration 3 cỡ x 3 lần và freeze M1 chưa hoàn tất.
+2. FullTrain-B đã có XGBoost và LR, natural/balanced cùng UL/EC provisional; tuy nhiên toàn bộ LR chưa hội tụ, FullTrain-A chưa có đúng nguồn, EC vẫn chờ chốt group unit. QĐ16 tại `rho*=0,5%` và freeze M1 chưa hoàn tất.
 
 ## 2. Phạm vi dữ liệu và giao thức đã chạy
 
@@ -24,7 +26,7 @@ CQ v1 hiện tại có Pool B gồm 994.608 snapshot, được ghép từ bốn 
 
 Nhãn chính là `y_alpha_1`, ánh xạ `E=0`, `G=1`, `A=2`. Phân bố dev rất lệch: lớp 0 chỉ có 177/31.028 dòng ở mỗi phase, trong khi train có 7.920/248.652 dòng ở mỗi phase. Đây là một thay đổi prior đáng kể giữa train và dev, do đó báo cáo không chỉ dùng Macro-F1 mà phải theo dõi riêng recall, F1 và PR-AUC của lớp 0.
 
-Thiết kế screening hiện tại:
+Thiết kế screening lịch sử tại commit `46f733a`:
 
 - split: development-only, test khóa;
 - learner: XGBoost, model seed 42;
@@ -73,29 +75,44 @@ Ba candidate SKQ-PC theo review đã chạy ở cùng budget. LRQ-SQ có MCC và
 
 ### QĐ12 Ngân sách theo headroom
 
-Đã chạy headroom trên dev bằng FullTrain-B và C02 tại các mức ngân sách đã quy định. Artifact quyết định ghi `rho*=2%`, gap 0,01, test khóa và `confirmatory_eligible=false`. Mức 2% được dùng cho screening hiện tại. Quyết định này chưa phải freeze M0 vì thiếu group unit xác nhận.
+Đã chạy lại headroom trên dev bằng đúng FullTrain-B và C02 tại bốn mức `0,5%`, `1%`, `2%` và `5%`, với selector seed `11, 29, 47`. Lượt chạy dùng XGBoost, class-weight tự nhiên, gom bốn phase bên trong từng seed và không đọc metric test. FullTrain-B đạt UL `0,654338`. Không mức nào đạt ngưỡng chênh lệch đăng ký `0,01`, nên quy tắc fallback chọn mức nhỏ nhất `rho*=0,5%`. Quyết định `2%` ở vòng cũ bị supersede và không còn là đầu vào hợp lệ cho QĐ16 hay lượt chọn phương pháp tiếp theo.
+
+| Ngân sách | UL C02 trung bình ba seed | FullTrain-B trừ C02 | Đạt ngưỡng 0,01 |
+|---:|---:|---:|:---:|
+| 0,5% | 0,650153 | 0,004185 | Không |
+| 1% | 0,655179 | -0,000842 | Không |
+| 2% | 0,647283 | 0,007055 | Không |
+| 5% | 0,652001 | 0,002337 | Không |
+
+Kết quả có độ biến thiên đáng kể giữa ba selector seed, vì vậy bảng trên chỉ là quyết định giao thức theo quy tắc đã đăng ký, không phải tuyên bố rằng `0,5%` tốt hơn mọi mức còn lại. Quyết định này cũng chưa phải freeze M1 vì còn thiếu group-unit confirmation và các gate M0 khác.
 
 ### QĐ13 Xử lý test đã mở
 
-Kết quả CQ_med cũ được giữ là exploratory. CQ v1 screening hiện tại chỉ dùng dev; các file test có trong snapshot nhưng runner không đánh giá test khi chưa có freeze hợp lệ. Không sử dụng test để chọn candidate, budget hoặc baseline.
+Kết quả CQ_med cũ được giữ là exploratory. CQ v1 screening lịch sử và lượt headroom hiện hành đều chỉ dùng dev; các file test có trong snapshot nhưng runner không đánh giá test khi chưa có freeze hợp lệ. Không sử dụng test để chọn candidate, budget hoặc baseline.
 
 ### QĐ14 CoreTab XGB OVA adapted
 
-Adapter OVA, largest-remainder quota, no-padding và realized-size diagnostics đã được cài đặt và kiểm thử. G10 chỉ xác minh fidelity/interface. CoreTab OVA chưa nằm trong screening 2% vừa chạy, nên chưa có số liệu CQ v1 để so sánh với SKQ-PC.
+Adapter OVA, largest-remainder quota, no-padding và realized-size diagnostics đã được cài đặt và kiểm thử. G10 chỉ xác minh fidelity/interface. CoreTab OVA chưa được benchmark trên CQ v1 tại ngân sách mới `rho*=0,5%`, nên chưa có số liệu hợp lệ để so sánh với SKQ-PC.
 
 ### QĐ15 Trọng số huấn luyện
 
-Pipeline đã chuẩn hóa effective sample weights về mean 1. Screening dùng chính sách class weight `balanced`. Chính sách này chưa được chốt M0 bằng so sánh FullTrain-B natural với balanced trên cả UL và EC; do đó vẫn là lựa chọn development tạm thời.
+Pipeline đã chuẩn hóa effective sample weights về mean 1. FullTrain-B đã so sánh natural với balanced trên UL và EC provisional: natural XGBoost hiện tốt nhất đồng thời trước A8 (`UL=0,654338`, `EC=0,080661`), trong khi A8 giúp balanced XGBoost giảm EC nhưng làm giảm UL. Chính sách natural vẫn ghi `provisional_pending_supervisor_confirmation`; LR chưa được dùng để chốt vì cả tám fit cũ đều chạm `max_iter=5000` và phải tune lại dev-only.
 
 ### QĐ16 Cổng tài nguyên theo thời gian đo
 
-Ngưỡng số phép tính cũ không còn dùng để loại phương pháp. Screening đã ghi thời gian thực và RSS lower bound. Tuy nhiên, chưa có ba lần đo ở 50 nghìn, 200 nghìn và 800 nghìn dòng, nên G09 chưa đạt.
+Ngưỡng số phép tính cũ không còn dùng để loại phương pháp. Lượt calibration lịch sử đã đo ba candidate tại `rho=2%`, nhưng QĐ12 hiện đã chốt `rho*=0,5%`; vì vậy các số `2%` chỉ còn là evidence lịch sử. G09 chỉ đạt sau khi đo đủ 10 selector cố định và ba candidate tại `rho*=0,5%`, ba cỡ `50k/200k/800k`, ba replicate, rồi tính lịch dev/test từ upper prediction bound.
+
+Checkpoint QĐ16 mới tại `rho*=0,5%` đã hoàn tất 9/13 phương pháp, mỗi phương pháp đủ ba cỡ và ba replicate; 17/17 kiểm thử QĐ16 đạt, test CQ không được đọc. Chín phương pháp hoàn tất đều có upper prediction dưới trần ba giờ. Trong số này CoreTab-XGB OVA có upper prediction lớn nhất (`5.216,48 s`, khoảng 87 phút), tiếp theo là GCoreSet (`2.128,58 s`) và Data-OOB (`593,04 s`). Data-OOB có upper peak RSS khoảng `20,82 GiB`, cần giữ trong báo cáo tài nguyên dù thời gian đạt trần.
+
+Archive được đóng gói trước khi Kernel Thinning bắt đầu nên không chứa checkpoint Kernel Thinning; không được suy diễn các dòng log ngoài archive thành run thành công. Các phương pháp còn thiếu là Kernel Thinning và ba candidate SKQ. Vì vậy QĐ16 hiện là `PARTIAL`, chưa sinh được lịch dev/test đầy đủ.
 
 ### QĐ17 Chia sẻ và phiên bản
 
 Repo và notebook đã chuyển private. Tag `review-2026-10-13` tồn tại tại mốc lịch sử đã gửi. Nhánh protocol hiện chưa được hợp vào `main`; G01 vẫn chưa đạt do ba Git object của workbook nhị phân còn trong history. Nhóm chưa rewrite history để tránh làm mất các commit/tag đã chia sẻ; cần giảng viên hoặc nhóm chọn repo public sạch từ allowlist hay phê duyệt rewrite.
 
-## 6. Kết quả screening CQ v1 ở ngân sách 2 phần trăm
+## 6. Kết quả screening CQ v1 lịch sử ở ngân sách 2 phần trăm
+
+Phần này được giữ để truy vết failure mode và lý do sửa pipeline. Nó không còn là bảng chọn candidate sau khi QĐ12 mới chốt `rho*=0,5%`.
 
 ### 6.1 Kết quả tổng thể
 
@@ -148,17 +165,17 @@ Không có candidate SKQ nào giữ recall lớp 0 tốt hơn C02 hoặc FullTra
 | G01 Privacy | Chưa đạt | Workbook nhị phân còn trong Git history |
 | G02 Data schema | Đạt một phần | Enrollment-phase schema có hash; data card chưa hoàn chỉnh |
 | G03 Split | Chưa đạt confirmatory | Disjoint theo `course_id`; thiếu `course_root_id` |
-| G04 Labels and course metrics | Chưa đạt | Có q/y trong source nhưng screening chưa sinh Qc, EC, ICC và oracle floor |
+| G04 Labels and course metrics | Một phần | FullTrain-B đã có UL/EC provisional, ICC và oracle floor; còn chờ chốt group unit và FullTrain-A |
 | G05 Cutoff | Chưa có evidence đầy đủ | Cần 20 ca kiểm thủ công |
 | G06 Weights | Đạt ở code và screening | Mean-one effective weights; cần manifest run rõ hơn |
 | G07 Views | Đạt | Feature contract loại ID và target-derived columns |
-| G08 Learner | Đạt cho XGBoost screening | Early stopping dev-only; chưa phải panel learner |
-| G09 Resource | Chưa đạt | Thiếu calibration 3 cỡ x 3 lần và VRAM telemetry đáng tin cậy |
+| G08 Learner | Đạt cho XGBoost, LR còn mở | XGBoost early stopping dev-only; LR cũ không hội tụ, cần tuning tối đa tám cấu hình |
+| G09 Resource | Một phần (9/13) | 9 selector đủ 50k/200k/800k x 3 tại `rho*=0,5%`; còn Kernel Thinning và 3 candidate, chưa có lịch dev/test đầy đủ |
 | G10 Fidelity | Đạt | Kaggle T4 strict toy 10/10 |
 | G11 SKQ-PC | Đạt contract cơ bản | Exact budget, class coverage và mass error đạt; thiếu cờ QP rõ trong evidence hiện tại |
-| G12 CoreTab OVA | Đạt unit/fidelity, chưa có CQ benchmark | Chưa chạy tại rho*=2% |
+| G12 CoreTab OVA | Đạt unit/fidelity, chưa có CQ benchmark | Chưa chạy tại `rho*=0,5%` |
 | G13 Statistics | Một phần | Protocol có; chưa có bootstrap đúng course root |
-| G14 Freeze M0 | Chưa đạt | Thiếu G03, G04, G05, G09 |
+| G14 Freeze M0 | Chưa đạt | Thiếu group unit/raw checks, FullTrain-A, LR hợp lệ và G09 tại rho mới |
 | G15 Freeze M1 | Chưa đạt | Chưa chọn candidate cuối và chưa đủ evidence |
 | G16 Reporting | Một phần | Có run_id/config/split/commit; còn thiếu một số field chi phí và QP |
 
@@ -174,7 +191,7 @@ Không có candidate SKQ nào giữ recall lớp 0 tốt hơn C02 hoặc FullTra
 
 ### 9.2 Chạy ablation development về lớp hiếm
 
-Không mở test. Trên dev, cùng budget 2% và ba seed, tách ảnh hưởng của LRQ và SQ:
+Không mở test. Sau khi hoàn tất panel M0 tối thiểu tại `rho*=0,5%`, nếu còn thời gian dev thì tách ảnh hưởng của LRQ và SQ tại cùng ngân sách và ba seed:
 
 1. LRQ với uniform method weights;
 2. SQ không LRQ;
@@ -187,8 +204,8 @@ Tiêu chí giữ sửa đổi: Macro-F1/MCC không giảm đáng kể so với L
 
 - Xin hoặc xác nhận ánh xạ `course_id -> course_root_id`; nếu không tồn tại khóa mở lại, cần văn bản xác nhận để khóa group unit.
 - Chạy endpoint cấp khóa học UL/EC, ICC và oracle floor sau khi group unit được chốt.
-- Chạy CoreTab-XGB OVA adapted ở rho*=2% trên dev.
-- Chạy resource calibration theo QĐ16.
+- Chạy CoreTab-XGB OVA adapted ở `rho*=0,5%` trên dev.
+- Chạy resource calibration theo QĐ16 cho đủ 10 selector cố định và ba candidate tại `rho*=0,5%`.
 - Chốt natural/balanced class weights trên dev theo cả UL và EC.
 - Hoàn thiện data card, privacy decision và freeze manifest trước khi mở test.
 
@@ -205,10 +222,12 @@ Tiêu chí giữ sửa đổi: Macro-F1/MCC không giảm đáng kể so với L
 - Review ngày 12/10/2026 và Review ngày 13/10/2026.
 - Kế hoạch thực hiện V2 và ma trận traceability Review 12-13.
 - Evidence G10 fidelity trên Kaggle T4, strict audit 10/10.
-- Archive headroom CQ v1 trên dev, chọn rho*=2%.
-- Archive screening CQ v1 rho*=2%, seed 11/29/47.
+- Archive headroom CQ v1 trên dev: `results/cq_v1/skq_cq_v1_m0_headroom_2026_10_21.tar.gz`, SHA-256 `2839B7D1AF1284999DD1AC1ED406058A9D875E7048A5FB77E2C82AD3EE4EE4A3`; 52/52 evaluation thành công, 54/54 pytest đạt, chọn `rho*=0,5%` bằng fallback đã đăng ký.
+- Quyết định máy đọc: `docs/cq_v1/m0_headroom_decision_2026_10_21.json`, SHA-256 `623A22DC40ABBF19A48860CC72E884F0E409447F7CDC0380EE3575853A5C0DC9`.
+- Archive QĐ16 partial: `results/cq_v1/skq_cq_v1_m0_qd16_resource_rhostar.tar.gz`, SHA-256 `83BEAA285714AB642B722DFDC9E816B38193833D9FB44F73E39E17218D04ECAA`; 9/13 phương pháp hoàn tất, 17/17 pytest đạt, không có metric test.
+- Archive screening CQ v1 lịch sử ở 2%, seed 11/29/47; không dùng làm quyết định headroom hoặc QĐ16 hiện hành.
 - Các bảng `metrics_overall_long.csv`, `metrics_per_label_long.csv`, `confusion_matrix_long.csv`, run ledger và method artifacts trong archive screening.
 
 ## 12. Giới hạn diễn giải
 
-Mọi số trong báo cáo này là development evidence lịch sử ở learner view 56 feature và hiện đã bị supersede cho mục đích chọn candidate. Kết quả chỉ dùng để phát hiện lỗi pipeline và thiết kế lượt chạy lại. Không sử dụng để tuyên bố hiệu quả trên test, không coi phase là replicate độc lập, không gọi phương pháp là SOTA và không dùng kết quả để thay đổi test split.
+Các số screening sáu phương pháp ở Mục 6 là development evidence lịch sử ở learner view 56 feature và đã bị supersede cho mục đích chọn candidate. Riêng headroom QĐ12 tại commit `9b07f6f` là evidence dual-view hiện hành để chốt `rho*=0,5%`, nhưng không tự động làm M0 đạt GO. Không sử dụng bất kỳ số nào để tuyên bố hiệu quả trên test, không coi phase là replicate độc lập, không gọi phương pháp là SOTA và không dùng kết quả để thay đổi test split.

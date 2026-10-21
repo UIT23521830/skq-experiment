@@ -61,7 +61,57 @@
 
 \section{Results}
 \subsection{Development Results}
-\todoitem{Development-only tables; no test claims.}
+\paragraph{M0 headroom evidence (21 October 2026).}
+The registered development-only headroom run compared FullTrain-B with C02 at
+four training budgets.  XGBoost with natural class weighting was reused across
+the four temporal phases; selector seeds were 11, 29, and 47.  All 52 expected
+evaluation records completed, all 54 protocol tests passed, and no test metric
+was opened.  Table~\ref{tab:m0-headroom} reports the phase-aggregated
+development endpoint used by the registered decision rule.
+
+\begin{table}[t]
+\centering
+\caption{M0 development-only headroom evidence.  The reference FullTrain-B UL
+is 0.654338.  The gap is FullTrain-B UL minus mean C02 UL; none of the four
+budgets reaches the registered 0.01 threshold.}
+\label{tab:m0-headroom}
+\begin{tabular}{rrrr}
+\toprule
+Budget $\rho$ & Mean C02 UL & Gap & Eligible \\
+\midrule
+0.5\% & 0.650153 &  0.004185 & no \\
+1\%   & 0.655179 & -0.000842 & no \\
+2\%   & 0.647283 &  0.007055 & no \\
+5\%   & 0.652001 &  0.002337 & no \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Because no candidate budget met the threshold, the preregistered fallback rule
+selected the smallest budget, $\rho^\star=0.005$.  This is a protocol decision,
+not evidence that 0.5\% dominates every larger budget: the three selector seeds
+show material variability.  The earlier 2\% screening remains diagnostic only
+and cannot be used as the QD16 resource decision at $\rho^\star$.
+
+\paragraph{Evidence integrity and current status.}
+The immutable archive is
+\nolinkurl{skq_cq_v1_m0_headroom_2026_10_21.tar.gz}, with SHA-256
+\nolinkurl{2839B7D1AF1284999DD1AC1ED406058A9D875E7048A5FB77E2C82AD3EE4EE4A3},
+produced at repository commit
+\nolinkurl{9b07f6f769d8504a2555bf6608411c8f5131f8be}.  M0 remains
+\textbf{PARTIAL}: QD12 headroom is complete, while QD16 still requires the ten
+fixed selectors and three candidates at $\rho^\star=0.005$; FullTrain-A, LR
+tuning, group-unit confirmation, and the remaining raw-data checks are also
+open.  Therefore these data do not authorize M1 freezing or test opening.
+
+\paragraph{Partial QD16 checkpoint.}
+At $\rho^\star=0.005$, nine of the thirteen registered selectors completed all
+three calibration sizes and three replicates.  All 17 QD16 tests passed.  The
+largest completed upper runtime predictions were 5216.48 seconds for adapted
+CoreTab-XGB OVA, 2128.58 seconds for GCoreSet, and 593.04 seconds for Data-OOB;
+Data-OOB had an upper predicted peak RSS of 20.82 GiB.  Kernel Thinning and the
+three SKQ candidates remain unresolved, so no complete development/test
+resource schedule or QD16 PASS is reported.
 \subsection{Confirmatory Results}
 \todoitem{Populate only after M1 freeze and one-time test opening.}
 \subsection{Ablations and Failure Analysis}
