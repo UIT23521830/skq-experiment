@@ -70,3 +70,20 @@ thảo**, với ba ràng buộc:
 
 GO đầy đủ chỉ được ghi sau khi archive Kaggle V3 đạt, các quyết định 1--3 ở trên
 có phản hồi bằng văn bản, và QĐ16 có quyết định đủ cho cả 13 phương pháp.
+
+## Nhận và kiểm toán archive Kaggle
+
+Khi tải về `skq_cq_v3_m0_conditional_go_2026_10_21.tar.gz`, chạy:
+
+```powershell
+$env:PYTHONPATH = "src;."
+python scripts/summarize_cq_v3_m0_archive.py `
+  "C:\duong-dan\skq_cq_v3_m0_conditional_go_2026_10_21.tar.gz" `
+  --output-dir artifacts/cq_v3_m0_archive_summary
+```
+
+Chỉ gửi đề nghị GO có điều kiện khi output là
+`READY_TO_REQUEST_CONDITIONAL_GO`. Script kiểm tra dev-only, code pin, trạng
+thái mọi bước, D01--D12 bắt buộc, đủ bốn ô FullTrain-B, đủ 52 ô headroom và
+đúng ba dòng per-class cho mỗi evaluation. `full_go` luôn giữ `false` cho đến
+khi các quyết định bên ngoài archive và QĐ16 được đóng.
