@@ -20,7 +20,7 @@ from kaggle_secrets import UserSecretsClient
 
 REPO_URL = "https://github.com/UIT23521830/skq-experiment.git"
 BRANCH = "cq-v1-protocol-fixes"
-EXPECTED_COMMIT = "38a190a"
+EXPECTED_COMMIT = "13e8779c6ab786449977df2babb4aa823c06805c"
 KAGGLE_DATASET = Path("/kaggle/input/datasets/hoangzyyng/cq-v1-phase-features-v2")
 WORKING = Path("/kaggle/working")
 REPO = WORKING / "skq_experiment"
