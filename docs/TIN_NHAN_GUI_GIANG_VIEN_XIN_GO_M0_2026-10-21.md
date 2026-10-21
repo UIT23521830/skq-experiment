@@ -37,5 +37,6 @@ Tài liệu kèm theo:
 
 - `docs/BAO_CAO_XIN_GO_M0_V3_2026-10-21.md`
 - `docs/CQ_V3_M0_GO_CHECKLIST_2026-10-21.md`
+- `docs/CQ_V3_M0_PREFLIGHT_2026-10-22.md`
 - `paper/icc_review_m0_v1/main.tex`
 - archive Kaggle V3 và checksum (bổ sung ngay sau khi run hoàn tất)

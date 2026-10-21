@@ -1,8 +1,12 @@
 # Báo cáo xin GO M0 có điều kiện — CQ V3
 
-**Ngày:** 21/10/2026  
-**Nhánh:** `cq-v1-protocol-fixes`  
-**Commit pipeline V3:** `81e1181a8ca25b0dceb9c387a3e3811a6f2d3466`  
+**Ngày:** 21/10/2026
+
+**Preflight cuối:** 22/10/2026
+
+**Nhánh:** `cq-v1-protocol-fixes`
+
+**Commit pipeline V3:** `81e1181a8ca25b0dceb9c387a3e3811a6f2d3466`
 **Phạm vi:** development-only; test bị loại khỏi gói chạy.
 
 ## 1. Kết luận đề nghị
@@ -54,6 +58,10 @@ Gói không chứa test parquet, 10,4 triệu dòng feature shard, sequence, b�
 target toàn cohort hoặc split mặc định. Dataset Kaggle dùng để chạy gói này phải
 đặt **Private**. Cell từ chối chạy nếu phát hiện `test.parquet` hoặc file sai
 hash.
+
+Preflight độc lập ngày 22/10 đã đọc lại 39 ZIP entry, đối chiếu SHA-256 của cả
+37 file nguồn với manifest và ghi nhận 0 lỗi hash/kích thước, 0 entry bị cấm.
+Bộ kiểm thử M0 đầy đủ đạt 61/61; suite kiểm toán archive mới đạt 10/10.
 
 ## 4. Kiểm tra bắt buộc D01--D12
 
