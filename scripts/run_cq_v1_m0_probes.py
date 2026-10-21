@@ -90,7 +90,9 @@ def main() -> int:
     args = parser.parse_args()
     source = Path(args.input_dir).resolve()
     feature_spec = json.loads((source / "feature_columns.json").read_text(encoding="utf-8"))
-    features = [column for column in feature_spec["distance_feature_columns"] if column != "phase_fraction"]
+    features = list(feature_spec.get("model_feature_columns", ()))
+    if not features:
+        features = [*feature_spec["distance_feature_columns"], *feature_spec["categorical_features"]]
     train = pd.read_parquet(
         source / "model_ready" / "P4" / "train.parquet",
         columns=["course_id", "learner_code", "teacher_set_code", "school_set_code", args.target],
