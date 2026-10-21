@@ -48,16 +48,23 @@ def run(command, *, cwd=None, env=None):
     safe = [str(item) for item in command]
     print("$", " ".join(safe), flush=True)
     with LOG.open("a", encoding="utf-8") as stream:
-        completed = subprocess.run(
+        process = subprocess.Popen(
             safe, cwd=cwd, env=env, text=True,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            bufsize=1,
         )
         stream.write("$ " + " ".join(safe) + "\n")
-        stream.write(completed.stdout or "")
-        print(completed.stdout or "", flush=True)
-    if completed.returncode:
-        raise RuntimeError(f"Lệnh lỗi {completed.returncode}: {safe[0]}")
-    return (completed.stdout or "").strip()
+        lines = []
+        assert process.stdout is not None
+        for line in process.stdout:
+            lines.append(line)
+            stream.write(line)
+            stream.flush()
+            print(line, end="", flush=True)
+        returncode = process.wait()
+    if returncode:
+        raise RuntimeError(f"Lệnh lỗi {returncode}: {safe[0]}")
+    return "".join(lines).strip()
 
 
 def step(name, function):
@@ -235,12 +242,34 @@ try:
 
     step("01_clone_and_pin", clone_and_pin)
     step("02_install", lambda: run([
-        sys.executable, "-m", "pip", "install", "-q", "-e", f"{REPO}[boosting]",
+        sys.executable, "-m", "pip", "install", "-q", "-e", f"{REPO}[boosting,dev]",
     ]))
-    step("03_resolve_dataset", build_unified_source)
-
     env = os.environ.copy()
     env["PYTHONPATH"] = str(REPO / "src") + os.pathsep + str(REPO)
+    M0_DOCS.mkdir(parents=True, exist_ok=True)
+    pytest_files = (
+        "tests/test_cq_protocol.py",
+        "tests/test_cq_patch_1013_contracts.py",
+        "tests/test_cq_m0_audit.py",
+        "tests/test_feature_views.py",
+        "tests/test_weights.py",
+        "tests/test_headroom.py",
+        "tests/test_cq_headroom_evidence.py",
+        "tests/test_resource_calibration.py",
+        "tests/test_freeze.py",
+        "tests/test_freeze_v4.py",
+        "tests/test_course_metrics.py",
+        "tests/test_training_protocol.py",
+        "tests/test_coretab_ova.py",
+        "tests/test_cq_dev_endpoints.py",
+    )
+    execution["pytest_scope"] = list(pytest_files)
+    step("02b_pytest_m0_contracts", lambda: run([
+        sys.executable, "-m", "pytest", *pytest_files,
+        "--junitxml", M0_DOCS / "pytest_m0_contracts.xml",
+    ], cwd=REPO, env=env))
+    step("03_resolve_dataset", build_unified_source)
+
     balanced = REPO / "configs" / "cq_v1_m0_fulltrain_b_dev_balanced_v1.json"
     natural = REPO / "configs" / "cq_v1_m0_fulltrain_b_dev_natural_v1.json"
     experiment_ids = (
@@ -254,7 +283,6 @@ try:
         "--dataset", "course_quality_v1", "--overwrite",
     ], cwd=REPO, env=env))
 
-    M0_DOCS.mkdir(parents=True, exist_ok=True)
     probe_json = M0_DOCS / "m0_probes_dev_summary.json"
     step("05_run_m0_probes", lambda: run([
         sys.executable, REPO / "scripts" / "run_cq_v1_m0_probes.py",
@@ -290,6 +318,7 @@ try:
         "--dataset", "course_quality_v1",
         "--output", REPO / "artifacts" / "cq_v1_m0_resource_calibration",
         "--budget-ratio", "0.02", "--max-threads", "4", "--replicates", "3",
+        "--resume",
     ], cwd=REPO, env=env))
 
     execution["status"] = "success"

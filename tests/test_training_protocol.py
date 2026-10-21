@@ -108,6 +108,9 @@ def test_natural_class_policy_keeps_only_relative_method_weights(monkeypatch) ->
     expected = np.array([0.5, 1.0, 1.5])
     assert np.allclose(learner.fit_kwargs["sample_weight"], expected)
     assert fitted.base_cost["class_weight_policy"] == "natural"
+    assert fitted.base_cost["effective_class_prior"] == {
+        "labels": [0, 1], "probabilities": pytest.approx([1 / 6, 5 / 6]),
+    }
 
 
 def test_legacy_config_does_not_silently_enable_mlp_early_stopping(monkeypatch) -> None:

@@ -36,6 +36,49 @@ from skq_exp.methods.proposed.query_losses import make_oof_query_losses
 METHODS = ("skq_pc", "skq_pc_lrq_sq", "skq_pc_r")
 
 
+def _observation_payload(observations: list[CalibrationObservation]) -> list[dict[str, Any]]:
+    return [
+        {**item.__dict__, "device": item.device.__dict__}
+        for item in observations
+    ]
+
+
+def _load_observations(
+    path: Path,
+    *,
+    method_id: str,
+    environment_id: str,
+) -> list[CalibrationObservation]:
+    """Nạp checkpoint chỉ khi method/environment khớp, không trộn máy đo."""
+    if not path.is_file():
+        return []
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, list):
+        raise ValueError(f"Checkpoint không phải list: {path}")
+    observations = []
+    seen = set()
+    for row in payload:
+        device = DeviceMetadata(**row["device"])
+        observation = CalibrationObservation(
+            **{key: value for key, value in row.items() if key != "device"},
+            device=device,
+        )
+        observation.validate()
+        if observation.selector_id != method_id:
+            raise ValueError(f"Checkpoint {path} chứa selector khác: {observation.selector_id}")
+        if observation.device.environment_id != environment_id:
+            raise ValueError(
+                "Không resume calibration trên environment khác: "
+                f"{observation.device.environment_id} != {environment_id}"
+            )
+        key = (observation.rows, observation.replicate)
+        if key in seen:
+            raise ValueError(f"Checkpoint trùng observation {key}: {path}")
+        seen.add(key)
+        observations.append(observation)
+    return observations
+
+
 def _gpu() -> tuple[str | None, int | None, int]:
     try:
         result = subprocess.run(
@@ -121,6 +164,10 @@ def main() -> int:
     parser.add_argument("--method", action="append", choices=METHODS)
     parser.add_argument("--max-threads", type=int, default=4)
     parser.add_argument("--replicates", type=int, default=3)
+    parser.add_argument(
+        "--resume", action="store_true",
+        help="Tiếp tục từ observations_<method>.json trên đúng environment.",
+    )
     args = parser.parse_args()
     if args.replicates != 3:
         raise ValueError("QĐ16 yêu cầu đúng ba replicate; không giảm trong evidence M0")
@@ -149,8 +196,28 @@ def main() -> int:
     methods = tuple(args.method or METHODS)
     all_results = {}
     for method_id in methods:
-        observations = []
+        checkpoint = output / f"observations_{method_id}.json"
+        observations = (
+            _load_observations(
+                checkpoint, method_id=method_id,
+                environment_id=device.environment_id,
+            )
+            if args.resume else []
+        )
+        completed = {(item.rows, item.replicate) for item in observations}
+        print(
+            f"START method={method_id} resumed_observations={len(observations)}",
+            flush=True,
+        )
         for rows in CALIBRATION_ROWS:
+            missing_replicates = [
+                replicate for replicate in range(1, 4)
+                if (rows, replicate) not in completed
+            ]
+            if not missing_replicates:
+                print(f"SKIP method={method_id} rows={rows} reason=checkpoint_complete", flush=True)
+                continue
+            print(f"WARMUP_START method={method_id} rows={rows}", flush=True)
             warm_index = _stratified_indices(np.asarray(y_all), np.asarray(phase_all), min(10_000, rows), 9900 + rows)
             _, warm_seconds, _ = _peak_rss(lambda: _run_selector(
                 method_id,
@@ -158,8 +225,16 @@ def main() -> int:
                 np.asarray(y_all[warm_index]),
                 np.asarray(phase_all[warm_index]), 999, args.budget_ratio, args.max_threads,
             ))
-            for replicate in range(1, 4):
+            print(
+                f"WARMUP_DONE method={method_id} rows={rows} seconds={warm_seconds:.3f}",
+                flush=True,
+            )
+            for replicate in missing_replicates:
                 seed = 11 + replicate + rows
+                print(
+                    f"RUN_START method={method_id} rows={rows} replicate={replicate} seed={seed}",
+                    flush=True,
+                )
                 index = _stratified_indices(np.asarray(y_all), np.asarray(phase_all), rows, seed)
                 X_selector = np.asarray(X_selector_all[index])
                 X_learner = np.asarray(X_learner_all[index])
@@ -178,14 +253,22 @@ def main() -> int:
                     status="success" if result.status == "success" else result.status,
                 )
                 observations.append(observation)
-                atomic_json(output / f"observations_{method_id}.json", [
-                    {**item.__dict__, "device": item.device.__dict__} for item in observations
-                ])
-                print(f"{method_id} rows={rows} replicate={replicate} status={result.status} seconds={steady:.3f}", flush=True)
+                observations.sort(key=lambda item: (item.rows, item.replicate))
+                atomic_json(checkpoint, _observation_payload(observations))
+                print(
+                    f"RUN_DONE method={method_id} rows={rows} replicate={replicate} "
+                    f"status={result.status} seconds={steady:.3f} peak_rss={peak_rss}",
+                    flush=True,
+                )
         fitted = fit_scaling_model(tuple(observations), target_rows=len(X_learner_all))
         decision = gate_decision(fitted, supports_sharding=method_id in {"skq_pc", "skq_pc_r"})
         all_results[method_id] = {"fit": fitted, "decision": decision}
         atomic_json(output / f"resource_fit_{method_id}.json", all_results[method_id])
+        print(
+            f"METHOD_DONE method={method_id} decision={decision['decision']} "
+            f"upper_seconds={decision.get('upper_prediction_seconds')}",
+            flush=True,
+        )
     atomic_json(output / "resource_decision_all.json", {
         "schema_version": 1,
         "test_data_read": False,

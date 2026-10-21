@@ -77,6 +77,9 @@ def fit_selection_learner(
         selection_breakdown=selection.timings,
         passes_over_train=selection.diagnostics.get("passes_over_train"),
         sample_weight_summary=sample_weight_diagnostics(sample_weight),
+        effective_class_prior=_weighted_class_prior(
+            selected_y, sample_weight, np.unique(y_train),
+        ),
         class_weight_policy=class_weight_policy,
         early_stopping=early_stopping,
     )
@@ -122,6 +125,9 @@ def fit_generated_learner(
         selection_breakdown=generated.timings,
         passes_over_train=generated.diagnostics.get("passes_over_train"),
         sample_weight_summary=sample_weight_diagnostics(sample_weight),
+        effective_class_prior=_weighted_class_prior(
+            generated.y, sample_weight, np.unique(y_full_train),
+        ),
         class_weight_policy=class_weight_policy,
         early_stopping=early_stopping,
     )
@@ -218,6 +224,7 @@ def _fit_learner(
     selection_breakdown: dict[str, Any],
     passes_over_train: Any,
     sample_weight_summary: dict[str, float | int],
+    effective_class_prior: dict[str, Any],
     class_weight_policy: str,
     early_stopping: dict[str, Any] | None,
 ) -> FittedLearner:
@@ -308,6 +315,7 @@ def _fit_learner(
         "selection_breakdown_seconds": selection_breakdown,
         "passes_over_train": passes_over_train,
         "effective_sample_weight": sample_weight_summary,
+        "effective_class_prior": effective_class_prior,
         "class_weight_policy": class_weight_policy,
         "early_stopping_enabled": bool(early_enabled and supports_early_stopping),
         "early_stopping_source": "dev" if early_enabled and supports_early_stopping else None,
@@ -331,6 +339,27 @@ def _class_weights(
     if policy == "balanced":
         return balanced_class_weights(y_full_train)
     raise ValueError("class_weight_policy chỉ nhận natural hoặc balanced")
+
+
+def _weighted_class_prior(
+    y: np.ndarray,
+    weights: np.ndarray,
+    labels: np.ndarray,
+) -> dict[str, Any]:
+    """Lưu prior learner thật sự thấy, căn theo labels để A8 tái lập được."""
+    y = np.asarray(y)
+    weights = np.asarray(weights, dtype=np.float64)
+    labels = np.asarray(labels)
+    if y.shape != weights.shape or weights.sum() <= 0:
+        raise ValueError("Không thể tính effective class prior")
+    probabilities = [float(weights[y == label].sum() / weights.sum()) for label in labels]
+    return {
+        "labels": [
+            int(label) if isinstance(label, (int, np.integer)) else str(label)
+            for label in labels
+        ],
+        "probabilities": probabilities,
+    }
 
 
 def _best_iteration(learner: Any) -> int | None:

@@ -7,7 +7,10 @@ import pytest
 
 from skq_exp.training.course_metrics import (
     class_conditional_means,
+    class_prevalence,
     cq_endpoints,
+    prior_correct_predictions,
+    prior_correct_probabilities,
     validate_private_predictions,
 )
 
@@ -61,3 +64,36 @@ def test_duplicate_prediction_rows_are_rejected() -> None:
     duplicated = pd.concat([predictions, predictions.iloc[[0]]], ignore_index=True)
     with pytest.raises(ValueError, match="trùng"):
         validate_private_predictions(duplicated)
+
+
+def test_integer_prediction_labels_are_normalized_for_ul() -> None:
+    predictions = _predictions()
+    mapping = {"E": 0, "G": 1, "A": 2}
+    predictions["y_true"] = predictions["y_true"].map(mapping)
+    predictions["y_pred"] = predictions["y_pred"].map(mapping)
+    result = cq_endpoints(predictions, {"E": 0.1, "G": 0.3, "A": 0.55}, n_min=2)
+    assert result["ul_mean_p1_p4"] == pytest.approx(1.0)
+
+
+def test_a8_prior_correction_is_identity_for_equal_priors() -> None:
+    probabilities = _predictions().loc[:3, ["p_E", "p_G", "p_A"]].to_numpy()
+    prior = {"E": 0.25, "G": 0.25, "A": 0.5}
+    assert prior_correct_probabilities(probabilities, prior, prior) == pytest.approx(probabilities)
+
+
+def test_a8_prior_correction_uses_phase_target_and_does_not_mutate_input() -> None:
+    predictions = _predictions()
+    original = predictions.copy(deep=True)
+    source = {"E": 1 / 3, "G": 1 / 3, "A": 1 / 3}
+    targets = {
+        "P1": {"E": 0.8, "G": 0.1, "A": 0.1},
+        "P2": source,
+        "P3": source,
+        "P4": source,
+    }
+    corrected = prior_correct_predictions(predictions, source, targets)
+    assert predictions.equals(original)
+    assert corrected.loc[corrected["phase"] == "P1", "p_E"].mean() > predictions.loc[predictions["phase"] == "P1", "p_E"].mean()
+    assert class_prevalence(["E", "G", "A", "A"]) == pytest.approx(
+        {"E": 0.25, "G": 0.25, "A": 0.5}
+    )

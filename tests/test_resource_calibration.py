@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import json
+
 from skq_exp.experiments.resource_calibration import (
     CALIBRATION_ROWS,
     CalibrationObservation,
     DeviceMetadata,
     fit_scaling_model,
     gate_decision,
+)
+from scripts.run_cq_v1_resource_calibration import (
+    _load_observations,
+    _observation_payload,
 )
 
 
@@ -66,3 +72,24 @@ def test_upper_bound_over_cap_requests_shard_without_timeout_status() -> None:
     )
     assert decision["decision"] == "run_shared_shard_wrapper"
     assert decision["run_status"] is None
+
+
+def test_resource_checkpoint_round_trip_and_rejects_other_environment(tmp_path) -> None:
+    observations = list(_observations())
+    path = tmp_path / "observations_selector-a.json"
+    path.write_text(
+        json.dumps(_observation_payload(observations)),
+        encoding="utf-8",
+    )
+    loaded = _load_observations(
+        path, method_id="selector-a", environment_id="fixture-v1",
+    )
+    assert loaded == observations
+    try:
+        _load_observations(
+            path, method_id="selector-a", environment_id="different-machine",
+        )
+    except ValueError as error:
+        assert "environment khác" in str(error)
+    else:
+        raise AssertionError("Checkpoint không được trộn environment")
