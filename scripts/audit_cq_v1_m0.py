@@ -86,7 +86,11 @@ def build_audit(
     q_col, y_col = TARGETS[target]
     source_validation = json.loads((source / "validation.json").read_text(encoding="utf-8"))
     feature_spec = json.loads((source / "feature_columns.json").read_text(encoding="utf-8"))
-    summary = json.loads((source / "summary.json").read_text(encoding="utf-8"))
+    summary_path = source / "summary.json"
+    if summary_path.is_file():
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    else:
+        summary = json.loads((source / "_SUCCESS.json").read_text(encoding="utf-8"))
     frames: dict[tuple[str, str], pd.DataFrame] = {}
     required = ["user_id", "course_id", "phase", "split", "enroll_time", "cutoff_time", q_col, y_col]
     for phase in PHASES:
