@@ -132,6 +132,10 @@ def build_audit(
 
     target_columns = set(feature_spec.get("target_columns", []))
     x_columns = set(feature_spec.get("distance_feature_columns", []))
+    selector_columns = x_columns - {"phase_fraction"}
+    learner_columns = set(feature_spec.get("model_feature_columns", ())) or (
+        x_columns | set(feature_spec.get("categorical_features", ()))
+    )
     forbidden_in_x = sorted(target_columns & x_columns)
     source_false = sorted(key for key, value in source_validation.items() if value is False)
     root_confirmed = root_policy == "course_id_equals_root"
@@ -190,10 +194,12 @@ def build_audit(
         "dev_oracle_floor_ec": oracle_floor,
         "dev_oracle_floor_eligible_courses": int(len(eligible)),
         "feature_contract": {
-            "distance_feature_count": len(x_columns),
+            "selector_feature_count": len(selector_columns),
+            "learner_feature_count": len(learner_columns),
+            "learner_static_code_columns": sorted(set(feature_spec.get("categorical_features", ())) & learner_columns),
             "target_columns": sorted(target_columns),
-            "target_columns_in_distance_X": forbidden_in_x,
-            "missing_indicators_added": any(name.startswith("missing_") for name in x_columns),
+            "target_columns_in_selector_X": forbidden_in_x,
+            "missing_indicators_added": any(name.startswith("missing_") for name in learner_columns),
         },
         "checks": checks,
     }
@@ -208,6 +214,10 @@ def _markdown(audit: dict[str, Any]) -> str:
         f"- `n_min={audit['n_min']}`, `delta_C={audit['delta_c']}`.",
         f"- Group unit: `{audit['split_manifest_public']['group_unit']}`.",
         f"- Confirmatory eligible: `{str(audit['confirmatory_eligible']).lower()}`.", "",
+        "## Hai feature view theo O17/QĐ3", "",
+        f"- Selector view: `{audit['feature_contract']['selector_feature_count']}` feature hành vi; không chứa cột mã.",
+        f"- Learner view: `{audit['feature_contract']['learner_feature_count']}` feature; giữ `{', '.join(audit['feature_contract']['learner_static_code_columns'])}` theo TEMPO-DQ.",
+        "- `course_id`, target và target-derived columns không nằm trong hai view.", "",
         "## Phân bố", "",
         "| Split | Enrollment | User | Course | E | G | A | Course < n_min | ICC(1) |", "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]

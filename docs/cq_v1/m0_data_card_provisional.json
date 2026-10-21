@@ -125,14 +125,22 @@
   "dev_oracle_floor_ec": 0.05878932156021635,
   "dev_oracle_floor_eligible_courses": 61,
   "feature_contract": {
-    "distance_feature_count": 57,
+    "selector_feature_count": 56,
+    "learner_feature_count": 62,
+    "learner_static_code_columns": [
+      "field_set_code",
+      "gender_code",
+      "learner_code",
+      "school_set_code",
+      "teacher_set_code"
+    ],
     "target_columns": [
       "q_alpha_0p1",
       "q_alpha_1",
       "y_alpha_0p1",
       "y_alpha_1"
     ],
-    "target_columns_in_distance_X": [],
+    "target_columns_in_selector_X": [],
     "missing_indicators_added": false
   },
   "checks": {

@@ -19,6 +19,7 @@ def test_course_quality_v1_pool_b_and_four_dev_phases(tmp_path):
     metadata = {
         "distance_feature_columns": feature_columns,
         "categorical_features": ["learner_code"],
+        "model_feature_columns": [*feature_columns, "learner_code"],
         "target_columns": ["q_alpha_0p1", "y_alpha_0p1", "q_alpha_1", "y_alpha_1"],
         "preprocessing_scope": "train-only per phase",
     }
@@ -37,6 +38,7 @@ def test_course_quality_v1_pool_b_and_four_dev_phases(tmp_path):
             frame["course_id"] = course
             frame["phase"] = phase
             frame["split"] = split
+            frame["learner_code"] = np.arange(size, dtype=float) % 2
             frame["y_alpha_1"] = (["E", "G", "A"] * 2)[:size]
             frame["q_alpha_1"] = np.linspace(0.1, 0.5, size)
             frame["y_alpha_0p1"] = frame["y_alpha_1"]
@@ -48,10 +50,14 @@ def test_course_quality_v1_pool_b_and_four_dev_phases(tmp_path):
         validate_expected_rows=False,
     )
     data = load_processed("course_quality_v1", processed, mmap=False)
-    assert data["X_train"].shape == (24, 56)
+    assert data["X_train"].shape == (24, 58)
+    assert data["X_selector_train"].shape == (24, 56)
     assert data["phase_train"].tolist() == [0] * 6 + [1] * 6 + [2] * 6 + [3] * 6
-    assert all(data[f"X_dev_phase{phase}"].shape == (3, 56) for phase in range(1, 5))
+    assert all(data[f"X_dev_phase{phase}"].shape == (3, 58) for phase in range(1, 5))
     assert np.array_equal(data["X_dev"], data["X_dev_phase4"])
     payload = json.loads(manifest.read_text(encoding="utf-8"))
     assert payload["test_locked"] is True
     assert payload["confirmatory_eligible"] is False
+    contract = json.loads((processed / "course_quality_v1" / "feature_contract.json").read_text(encoding="utf-8"))
+    assert "learner_code" in contract["learner_columns"]
+    assert "learner_code" not in contract["selector_columns"]

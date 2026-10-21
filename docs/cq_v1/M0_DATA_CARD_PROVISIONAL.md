@@ -8,6 +8,12 @@
 - Group unit: `course_id_provisional`.
 - Confirmatory eligible: `false`.
 
+## Hai feature view theo O17/QĐ3
+
+- Selector view: `56` feature hành vi; không chứa cột mã.
+- Learner view: `62` feature; giữ `field_set_code, gender_code, learner_code, school_set_code, teacher_set_code` theo TEMPO-DQ.
+- `course_id`, target và target-derived columns không nằm trong hai view.
+
 ## Phân bố
 
 | Split | Enrollment | User | Course | E | G | A | Course < n_min | ICC(1) |

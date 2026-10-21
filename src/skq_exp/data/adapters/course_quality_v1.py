@@ -65,12 +65,22 @@ class _CourseQualityV1Base(DatasetAdapter):
         feature_spec = json.loads(
             (source / "feature_columns.json").read_text(encoding="utf-8")
         )
-        numeric = [
+        selector_columns = [
             column for column in feature_spec["distance_feature_columns"]
             if column != "phase_fraction"
         ]
-        if len(numeric) != 56:
-            raise ValueError(f"CQ v1 cần 56 feature số sau lọc, nhận {len(numeric)}")
+        learner_columns = list(feature_spec.get("model_feature_columns", ()))
+        if not learner_columns:
+            learner_columns = [*feature_spec["distance_feature_columns"], *feature_spec["categorical_features"]]
+        if len(selector_columns) != 56:
+            raise ValueError(f"CQ v1 cần 56 feature selector sau lọc, nhận {len(selector_columns)}")
+        if not set(selector_columns) <= set(learner_columns):
+            raise ValueError("Mọi feature selector phải nằm trong learner view")
+        missing_learner_ids = sorted(
+            set(feature_spec["categorical_features"]) - set(learner_columns)
+        )
+        if missing_learner_ids:
+            raise ValueError(f"CQ v1 learner view thiếu cột mã QĐ3: {missing_learner_ids}")
 
         shapes: dict[str, dict[str, list[int]]] = {split: {} for split in SPLITS}
         class_counts: dict[str, dict[str, dict[str, int]]] = {
@@ -78,6 +88,7 @@ class _CourseQualityV1Base(DatasetAdapter):
         }
         split_groups: dict[str, set[int]] = {}
         train_parts: list[np.ndarray] = []
+        selector_train_parts: list[np.ndarray] = []
         train_labels: list[np.ndarray] = []
         train_row_ids: list[np.ndarray] = []
         train_phases: list[np.ndarray] = []
@@ -89,13 +100,15 @@ class _CourseQualityV1Base(DatasetAdapter):
                     raise FileNotFoundError(f"CQ v1 thiếu {path}")
                 columns = [
                     "user_id", "course_id", "phase", "split",
-                    self.target_column, self.target_q_column, *numeric,
+                    self.target_column, self.target_q_column,
+                    *dict.fromkeys([*learner_columns, *selector_columns]),
                 ]
                 frame = pd.read_parquet(path, columns=columns)
                 self._validate_frame(frame, split=split, phase=phase)
-                X = frame[numeric].to_numpy(dtype=np.float32, copy=True)
-                if not np.isfinite(X).all():
-                    raise ValueError(f"CQ v1 có NaN/Inf sau preprocessing: {phase}/{split}")
+                X = frame[learner_columns].to_numpy(dtype=np.float32, copy=True)
+                X_selector = frame[selector_columns].to_numpy(dtype=np.float32, copy=True)
+                if not np.isfinite(X).all() or not np.isfinite(X_selector).all():
+                    raise ValueError(f"CQ v1 có NaN/Inf trong learner/selector view: {phase}/{split}")
                 y = self._encode_labels(frame[self.target_column], phase, split)
                 row_ids = pd.util.hash_pandas_object(
                     frame[["user_id", "course_id", "phase"]], index=False,
@@ -111,6 +124,7 @@ class _CourseQualityV1Base(DatasetAdapter):
 
                 if split == "train":
                     train_parts.append(X)
+                    selector_train_parts.append(X_selector)
                     train_labels.append(y)
                     train_row_ids.append(row_ids)
                     train_phases.append(
@@ -124,13 +138,14 @@ class _CourseQualityV1Base(DatasetAdapter):
                     np.save(output / f"course_groups_{prefix}.npy", course_groups)
 
         X_train = np.concatenate(train_parts, axis=0)
+        X_selector_train = np.concatenate(selector_train_parts, axis=0)
         y_train = np.concatenate(train_labels)
         row_ids_train = np.concatenate(train_row_ids)
         phase_train = np.concatenate(train_phases)
         if len(np.unique(row_ids_train)) != len(row_ids_train):
             raise ValueError("CQ v1 Pool B có row_id trùng")
         np.save(output / "X_train.npy", X_train)
-        np.save(output / "X_selector_train.npy", X_train)
+        np.save(output / "X_selector_train.npy", X_selector_train)
         np.save(output / "y_train.npy", y_train)
         np.save(output / "row_ids_train.npy", row_ids_train)
         np.save(output / "phase_train.npy", phase_train)
@@ -168,12 +183,12 @@ class _CourseQualityV1Base(DatasetAdapter):
 
         contract = {
             "schema_version": 1,
-            "numeric_feature_columns": numeric,
-            "selector_columns": numeric,
-            "learner_columns": numeric,
+            "numeric_feature_columns": list(feature_spec["distance_feature_columns"]),
+            "selector_columns": selector_columns,
+            "learner_columns": learner_columns,
             "excluded_from_X": [
                 "user_id", "course_id", "phase", "split", "enroll_time",
-                "cutoff_time", "phase_fraction", *feature_spec["categorical_features"],
+                "cutoff_time",
                 *feature_spec["target_columns"],
             ],
             "target_column": self.target_column,
@@ -200,7 +215,8 @@ class _CourseQualityV1Base(DatasetAdapter):
         })
         joblib.dump({
             "source": "phase_features_v2/model_ready",
-            "feature_columns": numeric,
+            "learner_feature_columns": learner_columns,
+            "selector_feature_columns": selector_columns,
             "target_column": self.target_column,
             "label_mapping": LABEL_MAPPING,
             "transform": "source train-only per-phase preprocessing; no refit in adapter",

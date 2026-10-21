@@ -661,10 +661,11 @@ def _produce_or_block(
             try:
                 query_started = time.perf_counter()
                 query_values, query_metadata = make_oof_query_losses(
-                    X_train, y_train, query_ids, seed=seed,
+                    X_learner_train, y_train, query_ids, seed=seed,
                     folds=int(options.get("oof_folds", 5)),
                     max_threads=int((config.resource or {}).get("max_threads", 4)),
                 )
+                query_metadata["feature_view"] = "learner_view_with_qd3_static_codes"
                 query_metadata["seconds"] = time.perf_counter() - query_started
                 query_cache[cache_key] = (query_values, query_metadata)
             except Exception as error:
