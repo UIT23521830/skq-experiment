@@ -193,9 +193,24 @@ def load_processed(dataset_id: str, processed_root: str | Path, mmap: bool = Tru
     mode = "r" if mmap else None
     result: dict[str, Any] = {}
     for split in ("train", "dev", "test"):
-        result[f"X_{split}"] = np.load(root / f"X_{split}.npy", mmap_mode=mode)
-        result[f"y_{split}"] = np.load(root / f"y_{split}.npy", mmap_mode=mode)
-        result[f"row_ids_{split}"] = np.load(root / f"row_ids_{split}.npy", mmap_mode=mode)
+        required = split in {"train", "dev"}
+        paths = {
+            "X": root / f"X_{split}.npy",
+            "y": root / f"y_{split}.npy",
+            "row_ids": root / f"row_ids_{split}.npy",
+        }
+        missing = [name for name, path in paths.items() if not path.exists()]
+        if missing:
+            if required:
+                raise FileNotFoundError(
+                    f"Processed dataset {dataset_id} thiếu {split}: {missing}"
+                )
+            # M0 development bundles intentionally omit every test array.  The
+            # confirmatory runner will still fail closed when test is requested.
+            continue
+        result[f"X_{split}"] = np.load(paths["X"], mmap_mode=mode)
+        result[f"y_{split}"] = np.load(paths["y"], mmap_mode=mode)
+        result[f"row_ids_{split}"] = np.load(paths["row_ids"], mmap_mode=mode)
         selector_path = root / f"X_selector_{split}.npy"
         if selector_path.exists():
             result[f"X_selector_{split}"] = np.load(selector_path, mmap_mode=mode)

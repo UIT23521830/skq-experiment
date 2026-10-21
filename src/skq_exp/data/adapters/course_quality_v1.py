@@ -1,10 +1,11 @@
-"""Adapter CQ v1 enrollment-phase cho Pool B và dev/test bốn phase.
+"""Adapter CQ v1 enrollment-phase cho Pool B và bốn phase đánh giá.
 
-Nguồn ``phase_features_v2`` đã được nhóm dữ liệu tạo theo khóa học và có hai
-nhãn alpha dùng chung X. Adapter này không tự chia lại dữ liệu, không dùng q/y
-làm feature, không đưa mã định danh vào hình học và giữ test khóa ở runner.
-``course_id`` tạm làm group audit vì snapshot hiện chưa có ``course_root_id``;
-do đó artifact được đánh dấu development-only, không đủ điều kiện confirmatory.
+V3 được đọc từ ``course_random_split/supervised_raw`` rồi fit một phép tiền xử
+lý chung trên toàn Pool B train.  Nhờ vậy ``phase_fraction`` còn phân biệt P1--P4
+thay vì bị triệt tiêu bởi scaler riêng phase.  Gói M0 dev có thể cố ý không chứa
+test; adapter và loader chỉ cho phép train/dev trong trường hợp đó.  Mọi artifact
+vẫn development-only cho tới khi review chấp thuận split và xác nhận
+``course_id`` chính là group/root unit.
 """
 
 from __future__ import annotations
@@ -65,6 +66,7 @@ class _CourseQualityV1Base(DatasetAdapter):
         feature_spec = json.loads(
             (source / "feature_columns.json").read_text(encoding="utf-8")
         )
+        source_version = str(feature_spec.get("version", "phase-features-v2"))
         selector_columns = [
             column for column in feature_spec["distance_feature_columns"]
             if column != "phase_fraction"
@@ -82,9 +84,52 @@ class _CourseQualityV1Base(DatasetAdapter):
         if missing_learner_ids:
             raise ValueError(f"CQ v1 learner view thiếu cột mã QĐ3: {missing_learner_ids}")
 
-        shapes: dict[str, dict[str, list[int]]] = {split: {} for split in SPLITS}
+        raw_root = source / "supervised_raw"
+        use_pool_preprocessing = all(
+            (raw_root / phase / f"{split}.parquet").is_file()
+            for phase in PHASES for split in ("train", "dev")
+        )
+        data_root = raw_root if use_pool_preprocessing else source / "model_ready"
+        test_paths = [data_root / phase / "test.parquet" for phase in PHASES]
+        if any(path.is_file() for path in test_paths) and not all(
+            path.is_file() for path in test_paths
+        ):
+            raise FileNotFoundError("CQ v1 test phải đủ cả P1--P4 hoặc không đóng gói")
+        test_data_packaged = all(path.is_file() for path in test_paths)
+        available_splits = (
+            SPLITS if test_data_packaged else ("train", "dev")
+        )
+
+        numeric_columns = list(
+            feature_spec.get("raw_numeric_features", feature_spec["distance_feature_columns"])
+        )
+        categorical_columns = list(feature_spec["categorical_features"])
+        pool_medians: pd.Series | None = None
+        pool_means: pd.Series | None = None
+        pool_scales: pd.Series | None = None
+        if use_pool_preprocessing:
+            numeric_parts = [
+                pd.read_parquet(
+                    raw_root / phase / "train.parquet", columns=numeric_columns,
+                ).apply(pd.to_numeric, errors="coerce")
+                for phase in PHASES
+            ]
+            pooled_numeric = pd.concat(numeric_parts, ignore_index=True)
+            pool_medians = pooled_numeric.median(axis=0, skipna=True)
+            if pool_medians.isna().any():
+                bad = pool_medians.index[pool_medians.isna()].tolist()
+                raise ValueError(f"CQ v1 Pool B có feature train toàn NULL: {bad}")
+            pooled_imputed = pooled_numeric.fillna(pool_medians)
+            pool_means = pooled_imputed.mean(axis=0)
+            pool_scales = pooled_imputed.std(axis=0, ddof=0)
+            pool_scales = pool_scales.mask(pool_scales <= 1e-12, 1.0)
+            del numeric_parts, pooled_numeric, pooled_imputed
+
+        shapes: dict[str, dict[str, list[int]]] = {
+            split: {} for split in available_splits
+        }
         class_counts: dict[str, dict[str, dict[str, int]]] = {
-            split: {} for split in SPLITS
+            split: {} for split in available_splits
         }
         split_groups: dict[str, set[int]] = {}
         train_parts: list[np.ndarray] = []
@@ -94,8 +139,8 @@ class _CourseQualityV1Base(DatasetAdapter):
         train_phases: list[np.ndarray] = []
 
         for phase_index, phase in enumerate(PHASES, start=1):
-            for split in SPLITS:
-                path = source / "model_ready" / phase / f"{split}.parquet"
+            for split in available_splits:
+                path = data_root / phase / f"{split}.parquet"
                 if not path.is_file():
                     raise FileNotFoundError(f"CQ v1 thiếu {path}")
                 columns = [
@@ -105,8 +150,30 @@ class _CourseQualityV1Base(DatasetAdapter):
                 ]
                 frame = pd.read_parquet(path, columns=columns)
                 self._validate_frame(frame, split=split, phase=phase)
-                X = frame[learner_columns].to_numpy(dtype=np.float32, copy=True)
-                X_selector = frame[selector_columns].to_numpy(dtype=np.float32, copy=True)
+                if use_pool_preprocessing:
+                    assert pool_medians is not None
+                    assert pool_means is not None
+                    assert pool_scales is not None
+                    numeric = frame[numeric_columns].apply(
+                        pd.to_numeric, errors="coerce"
+                    )
+                    numeric = (numeric.fillna(pool_medians) - pool_means) / pool_scales
+                    transformed = numeric
+                    for column in categorical_columns:
+                        transformed[column] = pd.to_numeric(
+                            frame[column], errors="coerce"
+                        )
+                    X = transformed[learner_columns].to_numpy(
+                        dtype=np.float32, copy=True,
+                    )
+                    X_selector = transformed[selector_columns].to_numpy(
+                        dtype=np.float32, copy=True,
+                    )
+                else:
+                    X = frame[learner_columns].to_numpy(dtype=np.float32, copy=True)
+                    X_selector = frame[selector_columns].to_numpy(
+                        dtype=np.float32, copy=True,
+                    )
                 if not np.isfinite(X).all() or not np.isfinite(X_selector).all():
                     raise ValueError(f"CQ v1 có NaN/Inf trong learner/selector view: {phase}/{split}")
                 y = self._encode_labels(frame[self.target_column], phase, split)
@@ -150,9 +217,9 @@ class _CourseQualityV1Base(DatasetAdapter):
         np.save(output / "row_ids_train.npy", row_ids_train)
         np.save(output / "phase_train.npy", phase_train)
 
-        # Alias tương thích runner: dev/test canonical là P4; đánh giá CQ v1 dev
-        # thực tế vẫn dùng đủ dev_phase1..4 qua _evaluation_splits.
-        for split in ("dev", "test"):
+        # Alias tương thích runner: split canonical là P4; CQ development vẫn
+        # đánh giá đủ dev_phase1..4. Test không được tạo nếu gói M0 đã khóa nó.
+        for split in tuple(item for item in ("dev", "test") if item in available_splits):
             for stem in ("X", "y", "row_ids"):
                 shutil.copy2(
                     output / f"{stem}_{split}_phase4.npy",
@@ -163,26 +230,44 @@ class _CourseQualityV1Base(DatasetAdapter):
         if validate_expected_rows:
             phase_rows = {
                 split: {shapes[split][phase][0] for phase in PHASES}
-                for split in SPLITS
+                for split in available_splits
             }
             if any(len(values) != 1 for values in phase_rows.values()):
                 raise ValueError(f"CQ v1 số dòng không đồng nhất giữa phase: {phase_rows}")
-            unique_total = sum(next(iter(values)) for values in phase_rows.values())
-            if unique_total != expected.expected_rows:
-                raise ValueError(
-                    f"CQ v1 có {unique_total:,} enrollment, cần {expected.expected_rows:,}"
-                )
+            if test_data_packaged:
+                unique_total = sum(next(iter(values)) for values in phase_rows.values())
+                if unique_total != expected.expected_rows:
+                    raise ValueError(
+                        f"CQ v1 có {unique_total:,} enrollment, cần {expected.expected_rows:,}"
+                    )
+            summary_path = source / "summary.json"
+            if summary_path.is_file():
+                summary = json.loads(summary_path.read_text(encoding="utf-8"))
+                if int(summary.get("labeled_pairs", expected.expected_rows)) != expected.expected_rows:
+                    raise ValueError("CQ v1 summary không khớp expected_rows đã đăng ký")
+                expected_by_split = {
+                    str(item["split"]): int(item["n"])
+                    for item in summary.get("labeled_splits", [])
+                }
+                mismatched = {
+                    split: (next(iter(phase_rows[split])), expected_by_split.get(split))
+                    for split in available_splits
+                    if split in expected_by_split
+                    and next(iter(phase_rows[split])) != expected_by_split[split]
+                }
+                if mismatched:
+                    raise ValueError(f"CQ v1 rows không khớp summary: {mismatched}")
 
         overlaps = {
-            "train_dev": len(split_groups["train"] & split_groups["dev"]),
-            "train_test": len(split_groups["train"] & split_groups["test"]),
-            "dev_test": len(split_groups["dev"] & split_groups["test"]),
+            f"{left}_{right}": len(split_groups[left] & split_groups[right])
+            for position, left in enumerate(available_splits)
+            for right in available_splits[position + 1:]
         }
         if any(overlaps.values()):
             raise ValueError(f"CQ v1 course_id overlap giữa split: {overlaps}")
 
         contract = {
-            "schema_version": 1,
+            "schema_version": 2,
             "numeric_feature_columns": list(feature_spec["distance_feature_columns"]),
             "selector_columns": selector_columns,
             "learner_columns": learner_columns,
@@ -194,10 +279,19 @@ class _CourseQualityV1Base(DatasetAdapter):
             "target_column": self.target_column,
             "label_mapping": LABEL_MAPPING,
             "source_preprocessing_scope": feature_spec.get("preprocessing_scope"),
-            "group_unit": "course_id_provisional",
+            "adapter_preprocessing_scope": (
+                "joint Pool B train across P1-P4; applied unchanged to dev/test"
+                if use_pool_preprocessing
+                else "source train-only per-phase preprocessing"
+            ),
+            "source_data_version": source_version,
+            "group_unit": "course_id_pending_root_confirmation",
             "required_confirmatory_group_unit": "course_root_id",
             "confirmatory_eligible": False,
-            "deviation": "Snapshot thiếu course_root_id; chỉ development evidence.",
+            "deviation": (
+                "V3 split is random course-disjoint, not temporal/SGKF; "
+                "course_id equivalence to course_root_id awaits written approval."
+            ),
         }
         contract["contract_hash"] = stable_hash(contract)
         atomic_json(output / "feature_contract.json", contract)
@@ -209,34 +303,59 @@ class _CourseQualityV1Base(DatasetAdapter):
             "rows_by_split_phase": shapes,
             "class_counts": class_counts,
             "course_id_overlap": overlaps,
-            "group_unit": "course_id_provisional",
+            "group_unit": "course_id_pending_root_confirmation",
             "test_locked": True,
+            "test_data_packaged": test_data_packaged,
             "confirmatory_eligible": False,
         })
-        joblib.dump({
-            "source": "phase_features_v2/model_ready",
+        preprocessor_payload: dict[str, Any] = {
+            "source": (
+                "phase_features_v3/course_random_split/supervised_raw"
+                if use_pool_preprocessing
+                else "phase_features_v2/model_ready"
+            ),
             "learner_feature_columns": learner_columns,
             "selector_feature_columns": selector_columns,
             "target_column": self.target_column,
             "label_mapping": LABEL_MAPPING,
-            "transform": "source train-only per-phase preprocessing; no refit in adapter",
-        }, output / "preprocessor.joblib")
+            "transform": (
+                "median/mean/std fitted once on concatenated P1-P4 train"
+                if use_pool_preprocessing
+                else "source train-only per-phase preprocessing; no refit in adapter"
+            ),
+        }
+        if use_pool_preprocessing:
+            assert pool_medians is not None
+            assert pool_means is not None
+            assert pool_scales is not None
+            preprocessor_payload.update({
+                "numeric_feature_columns": numeric_columns,
+                "medians": pool_medians.to_dict(),
+                "means": pool_means.to_dict(),
+                "scales": pool_scales.to_dict(),
+            })
+        joblib.dump(preprocessor_payload, output / "preprocessor.joblib")
 
         source_files = [source / name for name in required_metadata]
         source_files.extend(
-            source / "model_ready" / phase / f"{split}.parquet"
-            for phase in PHASES for split in SPLITS
+            data_root / phase / f"{split}.parquet"
+            for phase in PHASES for split in available_splits
         )
         files_before_manifest = sorted(path for path in output.iterdir() if path.is_file())
         atomic_json(manifest_path, {
             "status": "prepared_development_only",
             "dataset": asdict(expected),
             "adapter": f"{type(self).__module__}.{type(self).__qualname__}",
-            "fit_scope": "source preprocessing fitted on train only, separately by phase",
+            "fit_scope": preprocessor_payload["transform"],
             "target_policy": "alpha=1 primary" if self.target_column == "y_alpha_1" else "alpha=0.1 sensitivity",
             "test_locked": True,
+            "test_data_packaged": test_data_packaged,
             "confirmatory_eligible": False,
-            "blocker": "course_root_id absent from supplied snapshot",
+            "blockers": [
+                "course_id equivalence to course_root_id awaits written approval",
+                "V3 random course split is not the registered temporal/SGKF protocol",
+                "FullTrain-A full-behavior table is not supplied",
+            ],
             "raw_files_sha256": {
                 path.relative_to(source).as_posix(): sha256_file(path)
                 for path in source_files

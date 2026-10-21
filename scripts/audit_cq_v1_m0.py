@@ -1,4 +1,4 @@
-"""Tạo data-card và bảng kiểm M0 CQ v1 mà không huấn luyện hoặc mở test.
+"""Tạo data-card và bảng kiểm M0 CQ v1 mà không mở test metric.
 
 Script chỉ đọc metadata/nhãn để kiểm toán giao thức. Nó không ghi danh sách ID
 ra artifact công khai: split manifest chỉ chứa số lượng và SHA-256 của ánh xạ.
@@ -91,17 +91,23 @@ def build_audit(
         summary = json.loads(summary_path.read_text(encoding="utf-8"))
     else:
         summary = json.loads((source / "_SUCCESS.json").read_text(encoding="utf-8"))
+    available_splits = tuple(
+        split for split in SPLITS
+        if all((source / "model_ready" / phase / f"{split}.parquet").is_file() for phase in PHASES)
+    )
+    if not {"train", "dev"} <= set(available_splits):
+        raise FileNotFoundError("Data card M0 cần đủ train/dev P1--P4")
     frames: dict[tuple[str, str], pd.DataFrame] = {}
     required = ["user_id", "course_id", "phase", "split", "enroll_time", "cutoff_time", q_col, y_col]
     for phase in PHASES:
-        for split in SPLITS:
+        for split in available_splits:
             path = source / "model_ready" / phase / f"{split}.parquet"
             if not path.is_file():
                 raise FileNotFoundError(path)
             frame = pd.read_parquet(path, columns=required)
             frames[(phase, split)] = frame
 
-    p1 = {split: frames[("P1", split)] for split in SPLITS}
+    p1 = {split: frames[("P1", split)] for split in available_splits}
     split_pairs = pd.concat(
         [frame[["course_id"]].drop_duplicates().assign(split=split) for split, frame in p1.items()],
         ignore_index=True,
@@ -118,7 +124,7 @@ def build_audit(
     same_keys_all_phases = all(
         _hash_rows(frames[(phase, split)][["user_id", "course_id"]])
         == _hash_rows(p1[split][["user_id", "course_id"]])
-        for phase in PHASES for split in SPLITS
+        for phase in PHASES for split in available_splits
     )
     train = p1["train"][["course_id", q_col, y_col]].rename(columns={q_col: "q", y_col: "y"})
     mu = {label: float(train.loc[train["y"].astype(str) == label, "q"].mean()) for label in CLASSES}
@@ -150,6 +156,12 @@ def build_audit(
     d04_probe = probe_evidence.get("D04", {})
     d04_status = "PASS" if isinstance(d04_probe.get("macro_f1_mean"), (int, float)) else "BLOCKED"
     d05_pass = set(probe_evidence.get("D05", {})) == set(PHASES)
+    d03_probe = probe_evidence.get("D03", {})
+    d03_pass = d03_probe.get("status") == "PASS_PROBE_COMPLETED"
+    d06_probe = probe_evidence.get("D06", {})
+    d06_pass = d06_probe.get("status") == "PASS_20_PRIVATE_CASES"
+    split_variant = str(feature_spec.get("split_variant", "unknown"))
+    split_protocol_approved = split_variant in {"temporal", "sgkf"}
     checks = {
         "D01_size_distribution_split": {"status": "PASS", "evidence": "rows/users/courses/classes emitted below"},
         "D02_id_only_probe": {
@@ -157,10 +169,10 @@ def build_audit(
             "reason": "course-only dev Macro-F1 equals majority and all dev course IDs are unseen" if d02_pass else "run scripts/run_cq_v1_m0_probes.py",
             "evidence": d02,
         },
-        "D03_missingness_probe": {"status": "BLOCKED", "reason": "model-ready snapshot is already imputed; raw pre-imputation matrix is required"},
+        "D03_missingness_probe": {"status": "PASS" if d03_pass else "BLOCKED", "reason": "pre-imputation missing-mask probe completed; masks excluded from production X" if d03_pass else "raw pre-imputation matrix is required", "evidence": d03_probe},
         "D04_shuffled_labels": {"status": d04_status, "reason": "XGBoost shuffled-label dev probe" if d04_status == "PASS" else "requires FullTrain-B development run"},
         "D05_majority_baseline": {"status": "PASS" if d05_pass else "READY", "reason": "majority Macro-F1 emitted for P1-P4" if d05_pass else "class counts available; run probe script"},
-        "D06_cutoff_manual_20": {"status": "BLOCKED", "reason": "requires raw event timestamps for 20 sampled enrollment-course pairs"},
+        "D06_cutoff_manual_20": {"status": "PASS" if d06_pass else "BLOCKED", "reason": "20 private cases (5/phase) have max event <= cutoff and zero out-of-window events" if d06_pass else "requires 20 private timestamp cases", "evidence": d06_probe},
         "D07_weight_contract": {"status": "PASS_CODE", "reason": "covered by unit tests; run evidence still required"},
         "D08_baseline_fidelity": {"status": "DEFERRED_M1", "reason": "review explicitly allows completion before M1"},
         "D09_unit_label": {"status": "PASS" if unique_grain_ok and label_formula_ok and same_keys_all_phases else "FAIL"},
@@ -171,6 +183,10 @@ def build_audit(
             "status": "PASS" if root_confirmed else "BLOCKED",
             "reason": "course_id confirmed as one opening/root" if root_confirmed else "awaiting written confirmation that each course_id opens once",
         },
+        "split_protocol_contract": {
+            "status": "PASS" if split_protocol_approved else "BLOCKED_APPROVAL",
+            "reason": f"source split_variant={split_variant}; review requested temporal/SGKF unless lecturer approves deviation",
+        },
     }
     return {
         "schema_version": 1,
@@ -179,7 +195,9 @@ def build_audit(
         "n_min": n_min,
         "delta_c": 0.01,
         "root_policy": root_policy,
-        "confirmatory_eligible": root_confirmed and not source_false and split_overlap == 0,
+        "confirmatory_eligible": root_confirmed and split_protocol_approved and not source_false and split_overlap == 0 and "test" in available_splits,
+        "available_splits": list(available_splits),
+        "test_data_packaged": "test" in available_splits,
         "source_validation_false": source_false,
         "grain": ["user_id", "course_id", "phase"],
         "four_phases_same_enrollment_keys": same_keys_all_phases,
@@ -189,7 +207,7 @@ def build_audit(
             "actual_ids_published": False,
             "group_unit": "course_id_confirmed_as_root" if root_confirmed else "course_id_provisional",
         },
-        "distribution_by_split": {split: _distribution(p1[split], q_col, y_col, n_min) for split in SPLITS},
+        "distribution_by_split": {split: _distribution(p1[split], q_col, y_col, n_min) for split in available_splits},
         "protocol_constants_train": mu,
         "dev_oracle_floor_ec": oracle_floor,
         "dev_oracle_floor_eligible_courses": int(len(eligible)),
@@ -232,7 +250,7 @@ def _markdown(audit: dict[str, Any]) -> str:
     for key, row in audit["checks"].items():
         detail = row.get("reason") or row.get("evidence") or ""
         lines.append(f"| {key} | {row['status']} | {detail} |")
-    lines.extend(["", "## Giới hạn chưa được phép suy đoán", "", "- Chưa xác nhận `course_id == course_root_id` bằng văn bản.", "- Chưa có raw event để kiểm thủ công cutoff và missingness probe.", "- Chưa có FullTrain-A (full-behavior) trong snapshot Pool B.", "- Test vẫn khóa; thống kê phân bố test không phải đánh giá mô hình.", ""])
+    lines.extend(["", "## Giới hạn chưa được phép suy đoán", "", "- Chưa xác nhận `course_id == course_root_id` bằng văn bản.", "- Split `course_random` cần giảng viên chấp thuận deviation so với temporal/SGKF đã đăng ký.", "- Chưa có FullTrain-A (full-behavior) trong snapshot Pool B.", "- Test không nằm trong gói M0; không có fit, prediction hay metric test.", ""])
     return "\n".join(lines)
 
 
