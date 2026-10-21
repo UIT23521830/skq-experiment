@@ -805,3 +805,14 @@ Pool B. Nếu giảng viên yêu cầu một preprocessing chung cho pooled phas
 - Cần giảng viên duyệt candidate cuối và ba ablation tối thiểu trước khi tạo M0.
 - Cần xử lý hoặc được duyệt ngoại lệ cho ba object XLSX còn trong Git history.
 
+**Sửa O17/QĐ3 sau audit M0**
+
+- Screening tại commit `46f733a` dùng chung 56 feature hành vi cho selector và
+  learner; vì vậy chỉ giữ làm evidence chẩn đoán lịch sử, không dùng chọn M1.
+- Adapter mới tách selector view 56 feature không mã khỏi learner view 62 feature.
+  Learner giữ năm mã tĩnh và `phase_fraction` theo source TEMPO-DQ; selector
+  không nhận mã làm tọa độ. LRQ tạo OOF loss từ learner view nhưng herding/QP
+  vẫn chỉ nhận selector view.
+- Toàn bộ FullTrain-B và screening dùng cho quyết định phải chạy lại ở commit có
+  dual-view. Đây là sửa lỗi giao thức trước M0, không phải tuning theo test.
+

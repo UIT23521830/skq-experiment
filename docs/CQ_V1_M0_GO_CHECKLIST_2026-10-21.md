@@ -37,6 +37,10 @@
    resource decision, paper skeleton, commit/tag và danh sách blocker.
 5. Không chạy selector bảng chính mới, không mở test, không freeze M1 ở M0.
 
+Lưu ý: screening commit `46f733a` dùng 56 feature cho cả learner và selector,
+không đúng O17/QĐ3. Chỉ các run từ commit dual-view trở đi mới được dùng cho
+quyết định M0/M1; số cũ giữ như evidence chẩn đoán, không xóa.
+
 ## Blocker cần phản hồi ngoài code
 
 1. Xác nhận bằng văn bản mỗi `course_id` chỉ có một lần mở, hoặc cung cấp

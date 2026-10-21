@@ -1,6 +1,9 @@
 {
   "schema_version": 1,
   "evidence_id": "EV-CQ-SCREEN-RHO2-001",
+  "evidence_status": "superseded_development_diagnostic",
+  "superseded_reason": "Commit 46f733a used the 56-feature selector view for the learner too; O17/QD3 requires learner static codes to be retained.",
+  "allowed_use": "pipeline diagnosis only; not eligible for M1 candidate selection or confirmatory claims",
   "requirement_ids": [
     "R1",
     "R2",

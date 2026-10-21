@@ -31,7 +31,7 @@ cáo thực hiện và không được tạo claim học thuật mới.
 | QĐ14/Y11 | Review 13 | Xác nhận trực tiếp | CoreTab-XGB OVA phải ghi adapted | `methods/adapted/coretab_ova.py` | quota/no-pad tests và local upstream toy | IMPLEMENTED_TESTED_LOCAL |
 | QĐ15/O11/O14 | Review 13 | Xác nhận trực tiếp | Effective weights mean one cho mọi run | weights/evaluator | G06 | IMPLEMENTED_TESTED |
 | O16/Y5 | Review 13 | Xác nhận trực tiếp | Tune một lần, early stopping chỉ dùng dev | learners/evaluator/runner | `EV-CQ-SCREEN-RHO2-001`; G08 | VERIFIED_XGB_DEV_ONLY |
-| O17 | Review 13 | Xác nhận trực tiếp | ID không làm tọa độ selector | CQ protocol/runner/feature contract | `EV-CQ-SCREEN-RHO2-001`; G07 | VERIFIED_DEV |
+| O17 | Review 13 | Xác nhận trực tiếp | ID không làm tọa độ selector; learner giữ mã tĩnh QĐ3 | CQ adapter/runner/feature contract | dual-view tests 150/150; screening cũ superseded | IMPLEMENTED_TESTED_WAITING_RERUN |
 | O4 | Review 12–13 | Xác nhận trực tiếp | Synthetic ra khỏi phần chính | `config.py`, registry | G00 config tests | IMPLEMENTED_TESTED |
 | O5 | Review 12–13 | Xác nhận trực tiếp | Bổ sung sáu baseline | controls + `methods/adapted/modern_baselines.py` | `EV-G10-FIDELITY-001`; Kaggle T4 strict toy 10/10 | VERIFIED_G10_KAGGLE_T4 |
 | Y1–Y3/Y6–Y10/Y12–Y16 | Review 12–13 | Xác nhận trực tiếp | Số liệu, tên, seed, owner, reporting | registry/reports/docs | G16 | PLANNED |

@@ -11,7 +11,7 @@
 
 Nhóm đã chuyển được trọng tâm thực nghiệm từ Adult/CQ_med sang CQ v1 ở cấp lượt ghi danh và đã chạy vòng development đầu tiên theo bốn giai đoạn P1-P4. Test CQ v1 vẫn khóa. Quy tắc headroom chỉ dùng FullTrain-B và C02 trên dev đã chọn ngân sách chính tạm thời là `rho*=2%`. Ở ngân sách này, 64/64 lượt đánh giá của sáu cấu hình đều thành công trên XGBoost với ba selector seed `11, 29, 47`.
 
-Kết quả hiện tại chưa đủ để chọn phương pháp cuối cùng hoặc mở test. `SKQ-PC-LRQ-SQ` là ứng viên SKQ tốt nhất về Macro-F1, MCC và log loss, nhưng không cải thiện recall của lớp hiếm và tốn thời gian chọn mẫu cao hơn C03 rất nhiều. Vì vậy nhóm đề nghị chỉ giữ LRQ-SQ làm ứng viên chính để sửa cơ chế phân bổ lớp hiếm; giữ SKQ-PC và SKQ-PC-R làm ablation; chưa tuyên bố SKQ vượt baseline.
+Kết quả hiện tại chưa đủ để chọn phương pháp cuối cùng hoặc mở test. `SKQ-PC-LRQ-SQ` là ứng viên SKQ tốt nhất về Macro-F1, MCC và log loss, nhưng không cải thiện recall của lớp hiếm và tốn thời gian chọn mẫu cao hơn C03 rất nhiều. Sau audit M0, nhóm còn phát hiện screening ở commit `46f733a` đã dùng 56 feature hành vi cho cả selector và learner, trong khi O17/QĐ3 yêu cầu learner giữ các mã tĩnh của TEMPO-DQ. Vì vậy vòng screening này chỉ còn là evidence chẩn đoán lịch sử và phải chạy lại sau sửa dual-view; chưa được dùng để chọn winner M1.
 
 Hai blocker chính của confirmatory là:
 
@@ -20,7 +20,7 @@ Hai blocker chính của confirmatory là:
 
 ## 2. Phạm vi dữ liệu và giao thức đã chạy
 
-CQ v1 hiện tại có Pool B gồm 994.608 snapshot, được ghép từ bốn phase train; mỗi phase có 248.652 lượt ghi danh và 56 đặc trưng số. Mỗi phase dev có 31.028 dòng. Mỗi phase test có 28.318 dòng nhưng chưa được đọc để đánh giá. Các cột ID, phase, thời gian, mã categorical, `q_*` và `y_*` đều bị loại khỏi selector view và learner view.
+CQ v1 hiện tại có Pool B gồm 994.608 snapshot, được ghép từ bốn phase train; mỗi phase có 248.652 lượt ghi danh. Mỗi phase dev có 31.028 dòng. Mỗi phase test có 28.318 dòng nhưng chưa được đọc để đánh giá mô hình. Ở vòng screening lịch sử, 56 feature hành vi được dùng cho cả selector và learner; đây là deviation so với O17/QĐ3. Adapter hiện đã tách hai view: selector dùng 56 feature hành vi không có mã; learner dùng 62 feature, giữ `learner_code`, `teacher_set_code`, `school_set_code`, `field_set_code`, `gender_code` và `phase_fraction`. Các số screening bên dưới phải chạy lại theo view mới.
 
 Nhãn chính là `y_alpha_1`, ánh xạ `E=0`, `G=1`, `A=2`. Phân bố dev rất lệch: lớp 0 chỉ có 177/31.028 dòng ở mỗi phase, trong khi train có 7.920/248.652 dòng ở mỗi phase. Đây là một thay đổi prior đáng kể giữa train và dev, do đó báo cáo không chỉ dùng Macro-F1 mà phải theo dõi riêng recall, F1 và PR-AUC của lớp 0.
 
@@ -66,7 +66,7 @@ Ba candidate SKQ-PC theo review đã chạy ở cùng budget. LRQ-SQ có MCC và
 | O12 | Khóa lớn chi phối và khóa nhỏ nhiễu | Hạ tầng course metrics/bootstrap đã có | Chưa thể xác nhận do thiếu `course_root_id` và chưa chạy endpoint cấp khóa học |
 | O14, QĐ15 | Chuẩn hóa thang trọng số | Effective weight = method weight x class weight, sau đó chuẩn hóa mean-one cho mọi run type | Đã triển khai và kiểm thử; cần đưa evidence vào báo cáo run |
 | O16 | Tune và early stopping trên dev | XGBoost dùng early stopping trên dev, best iteration được lưu | Đạt cho XGBoost screening; panel learner khác chưa chạy |
-| O17 | ID không làm tọa độ selector | ID, phase, target và target-derived columns được loại khỏi X | Đạt theo feature contract và smoke test |
+| O17 | ID không làm tọa độ selector; learner giữ mã tĩnh QĐ3 | Adapter mới: selector 56 feature không mã, learner 62 feature có năm mã tĩnh; test dual-view đã qua | Code đạt; screening cũ lệch giao thức và phải chạy lại |
 | O18, QĐ17 | Privacy, version, tag và PR | Dữ liệu/Kaggle để private; tag review đã có; audit ghi nhận workbook nhị phân còn trong Git history | Chưa đóng G01; nhánh `cq-v1-protocol-fixes` chưa nằm trong `main` và cần quyết định xử lý history |
 
 ## 5. Phản hồi các quyết định bổ sung ngày 13 tháng 10
@@ -211,4 +211,4 @@ Tiêu chí giữ sửa đổi: Macro-F1/MCC không giảm đáng kể so với L
 
 ## 12. Giới hạn diễn giải
 
-Mọi số trong báo cáo này là development evidence. Kết quả chỉ dùng để sửa pipeline, thu hẹp candidate và thiết kế ablation. Không sử dụng để tuyên bố hiệu quả trên test, không coi phase là replicate độc lập, không gọi phương pháp là SOTA và không dùng kết quả để thay đổi test split.
+Mọi số trong báo cáo này là development evidence lịch sử ở learner view 56 feature và hiện đã bị supersede cho mục đích chọn candidate. Kết quả chỉ dùng để phát hiện lỗi pipeline và thiết kế lượt chạy lại. Không sử dụng để tuyên bố hiệu quả trên test, không coi phase là replicate độc lập, không gọi phương pháp là SOTA và không dùng kết quả để thay đổi test split.
