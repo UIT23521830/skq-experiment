@@ -1,0 +1,78 @@
+\documentclass[runningheads]{llncs}
+
+\usepackage[T5]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{xcolor}
+
+\newcommand{\todoitem}[1]{\par\noindent\textcolor{red}{[TODO: #1]}\par}
+
+\title{Early Course-Quality Prediction under a Small Training Budget}
+\titlerunning{Early Course-Quality Prediction}
+\author{Anonymous Authors}
+\authorrunning{Anonymous Authors}
+\institute{Anonymous Institution}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\todoitem{Write only after the development protocol is frozen. Include problem, method, datasets, primary endpoint UL, secondary endpoint EC, and measured efficiency. Do not claim test results before M1.}
+\keywords{Course quality prediction \and coreset selection \and early prediction \and imbalanced learning}
+\end{abstract}
+
+\section{Introduction}
+\todoitem{Motivation: early prediction at P1--P4 and small training budget.}
+\todoitem{Gap: enrollment-level utility and course-level quality estimation must be evaluated together.}
+\todoitem{Contributions: fill only after candidate selection and novelty audit.}
+
+\section{Related Work}
+\subsection{Early Course-Quality Prediction}
+\todoitem{TEMPO-DQ, LoDiBi, and the operational course-quality definition.}
+\subsection{Coresets and Data Selection for Tabular Classification}
+\todoitem{CoreTab, dataset condensation, kernel thinning/Compress++, and modern data-selection baselines.}
+\subsection{Multiclass and Imbalanced Selection}
+\todoitem{One-vs-all adaptation, class-mass preservation, and rare-class limitations.}
+
+\section{Problem Formulation}
+\todoitem{Define enrollment $(k,c)$, phase $p$, features $x_{kcp}$, learner label $y_{kc}$, and quality index $q_{kc}$.}
+\todoitem{Define budget $m=\lfloor\rho N\rfloor$, weighted selected set, UL, PCC estimate $\widehat Q_c$, and EC.}
+\todoitem{State that lower quality-index values are better and thresholds are 0.2 and 0.4.}
+
+\section{Data and Protocol}
+\subsection{CQ v1 and Temporal Snapshots}
+\todoitem{Insert approved data-card version, source provenance, P1--P4 cutoffs, and privacy terms.}
+\subsection{Splits and Leakage Controls}
+\todoitem{Insert the approved course-root group unit and split-manifest hash. Test remains sealed until M1.}
+\subsection{Endpoints and Protocol Constants}
+\todoitem{Report train-only $\mu_E,\mu_G,\mu_A$, approved $n_{\min}$, $\delta=0.005$, and approved $\delta_C$.}
+
+\section{Method}
+\todoitem{Describe only the final approved candidate. Keep unselected candidates as ablations.}
+\subsection{Selection and Allocation}
+\todoitem{Mathematical objective, allocation constraints, exact/realized budget, and weight normalization.}
+\subsection{Complexity and Resource Policy}
+\todoitem{Measured 50k/200k/800k calibration, log--log extrapolation, and three-hour selector cap.}
+
+\section{Experimental Design}
+\todoitem{FullTrain-A/B, C02, C03, adapted CoreTab-OVA, modern baselines, learners, seeds, and failure reporting.}
+\todoitem{Specify paired unit dataset/phase/seed/learner and registered statistical tests.}
+
+\section{Results}
+\subsection{Development Results}
+\todoitem{Development-only tables; no test claims.}
+\subsection{Confirmatory Results}
+\todoitem{Populate only after M1 freeze and one-time test opening.}
+\subsection{Ablations and Failure Analysis}
+\todoitem{Rare-class recall, class-mass error, QP versus uniform, and runtime/quality Pareto.}
+
+\section{Discussion}
+\todoitem{Operational meaning, limitations, negative results, and scope of generalization.}
+
+\section{Conclusion}
+\todoitem{Write after confirmatory analysis.}
+
+\bibliographystyle{splncs04}
+\bibliography{references}
+\end{document}

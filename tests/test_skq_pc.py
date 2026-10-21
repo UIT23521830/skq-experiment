@@ -55,6 +55,12 @@ def test_four_skq_pc_candidates_keep_exact_budget_and_stratum_mass(
     assert result.diagnostics["n_strata"] == 8
     assert result.diagnostics["max_stratum_mass_error"] <= 1e-8
     assert result.diagnostics["class_coverage"] == 1.0
+    assert result.diagnostics["qp_converged"] is True
+    assert result.diagnostics["qp_constraint_valid"] is True
+    assert result.diagnostics["passes_over_train"] == 2.0
+    assert result.diagnostics["passes_over_train_kind"] == "lower_bound"
+    assert all(item["qp_converged"] for item in result.diagnostics["strata"])
+    assert all(item["qp_constraint_valid"] for item in result.diagnostics["strata"])
 
 
 def test_skq_pc_random_is_reproducible_for_same_seed() -> None:

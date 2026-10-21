@@ -76,6 +76,12 @@ class StratifiedRandomSelector(BaseSelector):
                 "labels": labels.tolist(),
                 "class_capacities": counts.tolist(),
                 "class_quotas": quotas.tolist(),
+                "passes_over_train": 1.0,
+                "passes_over_train_kind": "exact_logical",
+                "passes_over_train_definition": (
+                    "Một lượt logic để lập strata theo lớp; thao tác lấy mẫu "
+                    "không được tính như một lượt đọc toàn bộ feature matrix."
+                ),
             },
             timings={"select": time.perf_counter() - started},
         )
@@ -104,7 +110,14 @@ class UniformRandomSelector(BaseSelector):
             realized_rows=requested,
             budget_mode="exact_total",
             method_id=self.method_id,
-            diagnostics={"sampling": "uniform_without_replacement"},
+            diagnostics={
+                "sampling": "uniform_without_replacement",
+                "passes_over_train": 0.0,
+                "passes_over_train_kind": "exact_logical",
+                "passes_over_train_definition": (
+                    "Selector sinh index trực tiếp và không quét feature matrix."
+                ),
+            },
             timings={"select": time.perf_counter() - started},
         )
 
@@ -164,6 +177,12 @@ class PhaseClassStratifiedRandomSelector(BaseSelector):
                 "stratum_capacities": counts.tolist(),
                 "stratum_quotas": quotas.tolist(),
                 "stratum_mass_error_max": float(np.max(np.abs(realized_mass - counts))),
+                "passes_over_train": 1.0,
+                "passes_over_train_kind": "exact_logical",
+                "passes_over_train_definition": (
+                    "Một lượt logic để lập strata phase-class; thao tác lấy mẫu "
+                    "trong strata không được tính như lượt đọc toàn bộ feature matrix."
+                ),
             },
             timings={"select": time.perf_counter() - started},
         )

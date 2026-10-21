@@ -750,3 +750,58 @@ từng phase do snapshot cung cấp và ghi hash đầy đủ; chưa tự fit l�
 Pool B. Nếu giảng viên yêu cầu một preprocessing chung cho pooled phases thì phải
 đăng deviation, tạo adapter version mới và chạy lại dev — không sửa đè evidence.
 
+### 21/10/2026 — Screening CQ v1 ở rho=2% và chuẩn hóa evidence pipeline
+
+**Evidence thực nghiệm hiện có**
+
+- Archive private `skq_cq_v1_screening_rho2pct_seed11_29_47_v1.tar.gz` chạy ở
+  commit `46f733a55f754b699656a0e69c1e24911d79891d`, Kaggle T4, test khóa.
+- Panel gồm FullTrain, C02, C03, SKQ-PC, SKQ-PC + LRQ-SQ và SKQ-PC-R; XGBoost,
+  model seed 42, selector seed 11/29/47, bốn dev phase. Cả 64/64 evaluation rows
+  thành công; không có method error.
+- Pool B có 994.608 dòng; budget 2% là 19.892 dòng, xấp xỉ nén 50 lần. Một model
+  được fit trên coreset rồi tái sử dụng để đánh giá riêng trên bốn dev phase.
+- `EV-CQ-SCREEN-RHO2-001` chứa 64 run_id, config hash, split hash và SHA-256 của
+  archive cùng các bảng overall/per-label/confusion/ledger. Manifest public không
+  chứa đường dẫn dữ liệu riêng hay dữ liệu mức dòng.
+
+**Kết quả development, chưa phải confirmatory**
+
+- FullTrain: Macro-F1 0,5802; MCC 0,5834; balanced accuracy 0,7030; worst-class
+  recall 0,5268; PR-AUC macro 0,6862; log loss 0,5243.
+- C02: 0,5649 / 0,5588 / 0,6405 / 0,3630 / 0,6617 / 0,5399.
+- C03: 0,5862 / 0,5869 / 0,6302 / 0,2943 / 0,6595 / 0,5049.
+- SKQ-PC: 0,5552 / 0,5679 / 0,6273 / 0,3150 / 0,6772 / 0,5501.
+- SKQ-PC + LRQ-SQ: 0,5860 / 0,6070 / 0,6258 / 0,2599 / 0,6537 / 0,4878.
+- SKQ-PC-R: 0,5785 / 0,5813 / 0,6189 / 0,2698 / 0,6766 / 0,5150.
+- Thứ tự sáu số trên là Macro-F1 / MCC / balanced accuracy / worst-class recall /
+  PR-AUC macro / log loss. LRQ-SQ hiện mạnh nhất về MCC và log loss, gần C03 về
+  Macro-F1, nhưng kém rõ về recall lớp 0. Vì vậy chưa được phép claim vượt trội.
+
+**Quyết định tạm thời**
+
+- Giữ LRQ-SQ làm candidate chính để kiểm tra tiếp; giữ SKQ-PC và SKQ-PC-R làm
+  ablation. C03 vẫn là đối chứng bắt buộc vì đạt Macro-F1 tốt nhất trong panel.
+- Chưa mở test, chưa freeze M1, chưa chạy phép kiểm định confirmatory. Snapshot
+  thiếu `course_root_id`, nên bootstrap theo course root và xác nhận không rò rỉ
+  giữa các phiên bản cùng khóa học chưa thể thực hiện đúng review.
+
+**Sửa nền evidence sau screening**
+
+- SKQ-PC ghi rõ `qp_converged`, `qp_constraint_valid`, sai số tổng trọng số, trọng
+  số nhỏ nhất, solver/iterations theo từng tầng và tổng hợp ở cấp method.
+- FullTrain/C02/C03/SKQ-PC ghi `passes_over_train`, loại phép đo và định nghĩa;
+  selector chưa khai báo được đánh dấu `unknown`, không tự suy diễn thành 0.
+- Temporal evaluator ghi rõ selection dùng chung cho bốn split, selection cost
+  không được cộng bốn lần, thời gian đánh giá tăng thêm theo split, và VRAM bằng
+  0 trên CPU được đổi thành `not_measured` thay vì báo 0 MB.
+- 148/148 test qua khi pytest dùng thư mục tạm trong workspace; nhóm test trực
+  tiếp về SKQ-PC/temporal/selectors đạt 18/18.
+
+**Điểm chờ xác nhận / dữ liệu**
+
+- Cần `course_root_id` thật hoặc xác nhận bằng văn bản rằng `course_id` đã là khóa
+  gốc bất biến; nếu không, toàn bộ kết quả trên chỉ là development evidence.
+- Cần giảng viên duyệt candidate cuối và ba ablation tối thiểu trước khi tạo M0.
+- Cần xử lý hoặc được duyệt ngoại lệ cho ba object XLSX còn trong Git history.
+

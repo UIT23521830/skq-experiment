@@ -149,6 +149,9 @@ def evaluate_fitted_learner(
     cpu_after = sum(process.cpu_times()[:2])
     rss_after = process.memory_info().rss
     io_after = _io_bytes(process)
+    peak_vram_bytes = _peak_vram_bytes()
+    if peak_vram_bytes is not None and peak_vram_bytes <= 0:
+        peak_vram_bytes = None
 
     cost = dict(fitted.base_cost)
     fit_io = cost.pop("io_bytes_fit", None)
@@ -168,10 +171,17 @@ def evaluate_fitted_learner(
         "io_bytes_fit_predict": (
             None if fit_io is None or predict_io is None else fit_io + predict_io
         ),
-        "peak_vram_bytes": _peak_vram_bytes(),
+        "peak_vram_bytes": peak_vram_bytes,
+        "peak_vram_measurement": (
+            "torch_cuda_allocator" if peak_vram_bytes is not None else "not_measured"
+        ),
         "evaluation_split_count": int(evaluation_split_count),
         "fit_shared_across_evaluation_splits": evaluation_split_count > 1,
         "fit_cost_allocation": "shared_not_additive",
+        "selection_shared_across_evaluation_splits": evaluation_split_count > 1,
+        "selection_cost_allocation": "shared_not_additive",
+        "shared_selection_fit_seconds": selection_seconds + cost["fit_seconds"],
+        "incremental_evaluation_seconds": predict_time,
     })
     cost.pop("rss_before_fit_bytes", None)
     metrics = compute_all_metrics(

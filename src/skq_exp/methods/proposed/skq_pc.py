@@ -185,6 +185,8 @@ class SKQPCSelector(BaseSelector):
         qp_objectives: list[float] = []
         qp_iterations: list[int] = []
         qp_solvers: set[str] = set()
+        qp_converged = True
+        qp_constraints_valid = True
         cell_started = time.perf_counter()
         qp_seconds = 0.0
         for stratum_index, plan in enumerate(strata):
@@ -243,11 +245,13 @@ class SKQPCSelector(BaseSelector):
                 Z[picked], Z[plan.rows].mean(axis=0), check=check
             )
             qp_seconds += time.perf_counter() - qp_started
-            if (
-                not solution.converged
-                or solution.sum_violation > 1e-8
-                or solution.min_weight < -1e-10
-            ):
+            constraint_valid = bool(
+                solution.sum_violation <= 1e-8
+                and solution.min_weight >= -1e-10
+            )
+            qp_converged = qp_converged and bool(solution.converged)
+            qp_constraints_valid = qp_constraints_valid and constraint_valid
+            if not solution.converged or not constraint_valid:
                 return SelectionResult.failure(
                     self.method_id, "failed", requested,
                     f"Simplex-QP tầng {plan.key} không hội tụ/vi phạm tolerance",
@@ -267,6 +271,12 @@ class SKQPCSelector(BaseSelector):
                 "cell_quotas": cell_quotas.astype(int).tolist(),
                 "anchor_row_ids": anchor_rows.astype(np.int64).tolist(),
                 "qp_objective": float(solution.objective),
+                "qp_converged": bool(solution.converged),
+                "qp_constraint_valid": constraint_valid,
+                "qp_sum_violation": float(solution.sum_violation),
+                "qp_min_weight": float(solution.min_weight),
+                "qp_solver": solution.solver,
+                "qp_iterations": int(solution.iterations),
             })
         cell_and_qp_seconds = time.perf_counter() - cell_started
 
@@ -316,8 +326,17 @@ class SKQPCSelector(BaseSelector):
                 "qp_objective_mean": float(np.mean(qp_objectives)),
                 "qp_iterations_max": max(qp_iterations, default=0),
                 "qp_solvers": sorted(qp_solvers),
+                "qp_converged": qp_converged,
+                "qp_constraint_valid": qp_constraints_valid,
                 "max_stratum_mass_error": max_mass_error,
                 "total_mass_error": total_mass_error,
+                "passes_over_train": 2.0,
+                "passes_over_train_kind": "lower_bound",
+                "passes_over_train_definition": (
+                    "Một lượt lập phase-class strata và một lượt biến đổi RFF; "
+                    "không quy đổi các lần quét lặp trong Gonzalez, herding, QP "
+                    "hoặc OOF query thành full-dataset pass."
+                ),
                 "class_coverage": float(
                     len(np.unique(y[indices])) / len(np.unique(y))
                 ),

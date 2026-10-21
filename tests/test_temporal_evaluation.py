@@ -99,7 +99,12 @@ def test_one_fitted_model_is_reused_for_four_temporal_splits(monkeypatch):
     assert learner.predict_proba_calls == 4
     assert learner.sample_weight.mean() == pytest.approx(1.0)
     assert all(cost["fit_shared_across_evaluation_splits"] for cost in costs)
+    assert all(cost["selection_shared_across_evaluation_splits"] for cost in costs)
+    assert all(cost["fit_cost_allocation"] == "shared_not_additive" for cost in costs)
+    assert all(cost["selection_cost_allocation"] == "shared_not_additive" for cost in costs)
     assert all(cost["evaluation_split_count"] == 4 for cost in costs)
+    assert all(cost["peak_vram_bytes"] is None for cost in costs)
+    assert all(cost["peak_vram_measurement"] == "not_measured" for cost in costs)
     assert all(
         cost["effective_sample_weight"]["mean"] == pytest.approx(1.0)
         for cost in costs

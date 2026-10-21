@@ -470,7 +470,22 @@ def _produce_or_block(
     requested = max(1, int(round(len(y_train) * config.budget_ratio)))
     if method_id == "c00_full_train":
         indices = np.arange(len(y_train), dtype=np.int64)
-        return SelectionResult(indices, np.ones(len(indices)), len(indices), len(indices), "full", method_id)
+        return SelectionResult(
+            indices,
+            np.ones(len(indices)),
+            len(indices),
+            len(indices),
+            "full",
+            method_id,
+            diagnostics={
+                "passes_over_train": 0.0,
+                "passes_over_train_kind": "exact_logical",
+                "passes_over_train_definition": (
+                    "FullTrain không chạy selector; lượt đọc khi fit learner được "
+                    "báo trong chi phí huấn luyện, không tính vào selection pass."
+                ),
+            },
+        )
     options = dict((config.method_options or {}).get(method_id, {}))
     lrq_provenance: dict[str, Any] = {}
     if options.get("parent_source") == "@base_winner_structure":
@@ -1264,6 +1279,12 @@ def _attach_generic_artifact_diagnostics(result: Any, y_train: np.ndarray) -> No
     result.diagnostics.setdefault("realized_rows", realized)
     result.diagnostics.setdefault("realized_fraction", realized / n_train if n_train else None)
     result.diagnostics.setdefault("compression_ratio", n_train / realized if realized else None)
+    result.diagnostics.setdefault("passes_over_train", None)
+    result.diagnostics.setdefault("passes_over_train_kind", "unknown")
+    result.diagnostics.setdefault(
+        "passes_over_train_definition",
+        "Adapter chưa khai báo số lượt logic qua toàn bộ train; không được suy từ estimated operations.",
+    )
     weights = np.asarray(result.weights, dtype=np.float64)
     if len(weights):
         denominator = float(len(weights) * np.sum(weights ** 2))
