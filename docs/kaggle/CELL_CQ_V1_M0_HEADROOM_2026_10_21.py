@@ -179,11 +179,34 @@ try:
     step("00_gpu_preflight", require_gpu)
     step("01_clone_and_pin", clone_and_pin)
     step("02_install", lambda: run([
-        sys.executable, "-m", "pip", "install", "-q", "-e", f"{REPO}[boosting]",
+        sys.executable, "-m", "pip", "install", "-q", "-e", f"{REPO}[boosting,dev]",
     ]))
-    step("03_resolve_dataset", build_source)
     env = os.environ.copy()
     env["PYTHONPATH"] = str(REPO / "src") + os.pathsep + str(REPO)
+    pytest_files = (
+        "tests/test_cq_protocol.py",
+        "tests/test_cq_patch_1013_contracts.py",
+        "tests/test_cq_m0_audit.py",
+        "tests/test_feature_views.py",
+        "tests/test_weights.py",
+        "tests/test_headroom.py",
+        "tests/test_cq_headroom_evidence.py",
+        "tests/test_resource_calibration.py",
+        "tests/test_freeze.py",
+        "tests/test_freeze_v4.py",
+        "tests/test_course_metrics.py",
+        "tests/test_training_protocol.py",
+        "tests/test_coretab_ova.py",
+        "tests/test_cq_dev_endpoints.py",
+    )
+    execution["pytest_scope"] = list(pytest_files)
+    pytest_xml = REPO / "artifacts" / "cq_v1_m0_headroom" / "pytest_m0_contracts.xml"
+    pytest_xml.parent.mkdir(parents=True, exist_ok=True)
+    step("02b_pytest_m0_contracts", lambda: run([
+        sys.executable, "-m", "pytest", *pytest_files,
+        "--junitxml", pytest_xml,
+    ], cwd=REPO, env=env))
+    step("03_resolve_dataset", build_source)
     fulltrain_path = REPO / "configs" / FULLTRAIN
     step("04_prepare_pool_b", lambda: run([
         sys.executable, "-m", "skq_exp.cli", "prepare-external",

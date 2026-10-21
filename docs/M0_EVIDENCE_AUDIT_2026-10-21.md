@@ -156,4 +156,5 @@ Code đã chuẩn bị một cell headroom độc lập, bốn config C02 và sc
 strict để chạy đúng 1 FullTrain-B XGB + 4 rho x 3 seed. Policy trong cell được
 ghi là `natural_provisional_pending_supervisor_confirmation`: kết quả có thể dùng
 làm evidence dev, nhưng không tự động biến thành policy freeze trước khi giảng
-viên xác nhận.
+viên xác nhận. Cell này cũng chạy bộ pytest M0 và đóng gói JUnit XML, nên không
+cần chạy lại calibration ba candidate chỉ để bổ sung evidence kiểm thử.
