@@ -8,11 +8,13 @@ test để early stopping hay tuning.
 from __future__ import annotations
 
 import time
+import warnings
 from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
 import psutil
+from sklearn.exceptions import ConvergenceWarning
 
 from ..methods.result import SelectionResult
 from ..methods.synthetic.result import GeneratedDatasetResult
@@ -251,32 +253,41 @@ def _fit_learner(
     rss_before = process.memory_info().rss
     io_before = _io_bytes(process)
     fit_started = time.perf_counter()
-    if early_enabled and has_dev and learner_id == "xgb":
-        learner.fit(
-            X_fit,
-            y_fit,
-            sample_weight=sample_weight,
-            eval_set=[(X_inner_val, y_inner_val)],
-            verbose=False,
-        )
-    elif early_enabled and has_dev and learner_id == "cat":
-        learner.fit(
-            X_fit,
-            y_fit,
-            sample_weight=sample_weight,
-            eval_set=(X_inner_val, y_inner_val),
-            early_stopping_rounds=patience,
-            verbose=False,
-        )
-    elif learner_id == "mlp":
-        eval_set = (
-            (X_inner_val, y_inner_val)
-            if early_enabled and has_dev
-            else None
-        )
-        learner.fit(X_fit, y_fit, sample_weight=sample_weight, eval_set=eval_set)
-    else:
-        learner.fit(X_fit, y_fit, sample_weight=sample_weight)
+    with warnings.catch_warnings(record=True) as caught_warnings:
+        warnings.simplefilter("always")
+        if early_enabled and has_dev and learner_id == "xgb":
+            learner.fit(
+                X_fit,
+                y_fit,
+                sample_weight=sample_weight,
+                eval_set=[(X_inner_val, y_inner_val)],
+                verbose=False,
+            )
+        elif early_enabled and has_dev and learner_id == "cat":
+            learner.fit(
+                X_fit,
+                y_fit,
+                sample_weight=sample_weight,
+                eval_set=(X_inner_val, y_inner_val),
+                early_stopping_rounds=patience,
+                verbose=False,
+            )
+        elif learner_id == "mlp":
+            eval_set = (
+                (X_inner_val, y_inner_val)
+                if early_enabled and has_dev
+                else None
+            )
+            learner.fit(X_fit, y_fit, sample_weight=sample_weight, eval_set=eval_set)
+        else:
+            learner.fit(X_fit, y_fit, sample_weight=sample_weight)
+    convergence_warnings = [
+        str(item.message) for item in caught_warnings
+        if issubclass(item.category, ConvergenceWarning)
+    ]
+    for item in caught_warnings:
+        if not issubclass(item.category, ConvergenceWarning):
+            warnings.warn(str(item.message), item.category, stacklevel=2)
     fit_time = time.perf_counter() - fit_started
     cpu_after = sum(process.cpu_times()[:2])
     rss_after = process.memory_info().rss
@@ -302,6 +313,11 @@ def _fit_learner(
         "early_stopping_source": "dev" if early_enabled and supports_early_stopping else None,
         "early_stopping_patience": patience if early_enabled and supports_early_stopping else None,
         "best_iteration": _best_iteration(learner),
+        "fit_converged": (
+            not convergence_warnings if learner_id == "lr" else None
+        ),
+        "optimizer_iterations": _optimizer_iterations(learner),
+        "convergence_warnings": convergence_warnings,
     }
     return FittedLearner(model=learner, labels=labels, base_cost=base_cost)
 
@@ -323,6 +339,13 @@ def _best_iteration(learner: Any) -> int | None:
         if value is not None:
             return int(value)
     return None
+
+
+def _optimizer_iterations(learner: Any) -> list[int] | None:
+    value = getattr(learner, "n_iter_", None)
+    if value is None:
+        return None
+    return [int(item) for item in np.asarray(value).reshape(-1)]
 
 
 def _io_bytes(process: psutil.Process) -> int | None:

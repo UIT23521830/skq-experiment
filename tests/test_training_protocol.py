@@ -6,8 +6,11 @@ XGBoost/CatBoost/Torch trên máy chạy unit test.
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pytest
+from sklearn.exceptions import ConvergenceWarning
 
 from skq_exp.methods.result import SelectionResult
 from skq_exp.training import evaluator as evaluator_module
@@ -23,6 +26,16 @@ class _EarlyStopLearner:
         del X, y
         self.fit_kwargs = kwargs
         return self
+
+
+class _WarningLearner(_EarlyStopLearner):
+    def __init__(self) -> None:
+        super().__init__()
+        self.n_iter_ = np.array([2000])
+
+    def fit(self, X, y, **kwargs):
+        warnings.warn("optimizer reached max_iter", ConvergenceWarning)
+        return super().fit(X, y, **kwargs)
 
 
 def _selection() -> SelectionResult:
@@ -110,3 +123,17 @@ def test_legacy_config_does_not_silently_enable_mlp_early_stopping(monkeypatch) 
         early_stopping=None,
     )
     assert learner.fit_kwargs["eval_set"] is None
+
+
+def test_lr_convergence_warning_is_preserved_as_cost_evidence(monkeypatch) -> None:
+    learner = _WarningLearner()
+    monkeypatch.setattr(evaluator_module, "build_learner", lambda *args, **kwargs: learner)
+    fitted = fit_selection_learner(
+        _selection(),
+        np.arange(12, dtype=np.float32).reshape(3, 4),
+        np.array([0, 1, 1]),
+        learner_id="lr",
+    )
+    assert fitted.base_cost["fit_converged"] is False
+    assert fitted.base_cost["optimizer_iterations"] == [2000]
+    assert fitted.base_cost["convergence_warnings"] == ["optimizer reached max_iter"]

@@ -24,6 +24,11 @@ PHASE_BY_EVAL = {f"dev_phase{index}": f"P{index}" for index in range(1, 5)}
 LABEL_TO_INT = {"E": 0, "G": 1, "A": 2}
 
 
+def _experiment_root(artifact_root: Path, experiment_id: str) -> Path:
+    """Trả đúng canonical run root mà experiment runner đang ghi."""
+    return artifact_root / "experiments" / experiment_id
+
+
 def _opaque(values: pd.Series, namespace: str) -> np.ndarray:
     return np.asarray([
         hashlib.sha256(f"{namespace}:{value}".encode("utf-8")).hexdigest()[:24]
@@ -49,7 +54,7 @@ def compute(
     target_q: str,
     target_y: str,
 ) -> dict[str, Any]:
-    experiment = artifact_root / experiment_id
+    experiment = _experiment_root(artifact_root, experiment_id)
     manifests = []
     for path in experiment.rglob("manifest.json"):
         payload = json.loads(path.read_text(encoding="utf-8"))
