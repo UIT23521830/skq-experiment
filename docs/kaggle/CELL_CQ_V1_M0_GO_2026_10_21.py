@@ -72,7 +72,11 @@ def build_unified_source():
         source_phase = model_ready / phase
         if not all((source_phase / f"{split}.parquet").is_file() for split in ("train", "dev", "test")):
             raise FileNotFoundError(f"Thiếu file ở {source_phase}")
-        shutil.copytree(source_phase, SOURCE / "model_ready" / phase)
+        destination = SOURCE / "model_ready" / phase
+        try:
+            os.symlink(source_phase, destination, target_is_directory=True)
+        except OSError:
+            shutil.copytree(source_phase, destination)
     print("DATA_ROOT thống nhất:", SOURCE)
 
 
