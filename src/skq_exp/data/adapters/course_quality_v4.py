@@ -51,12 +51,13 @@ class CourseQualityV4Adapter(DatasetAdapter):
         required = (
             "validation.json", "splits.json", "run_manifest.json",
             "selector_feature_columns.json", "learner_feature_columns.json",
-            "preprocessing.json", "course_family_members.parquet",
+            "preprocessing.json", "bundle_manifest.json", "SHA256SUMS.txt",
             "family_splits.parquet", "course_splits.parquet",
         )
         missing = [name for name in required if not (source / name).is_file()]
         if missing:
             raise FileNotFoundError(f"CQ V4 thiếu artifact bắt buộc: {missing}")
+        _verify_sha256s(source)
         test_files = sorted(
             path.relative_to(source).as_posix()
             for path in source.rglob("*")
@@ -69,10 +70,17 @@ class CourseQualityV4Adapter(DatasetAdapter):
         validation = _read_json(source / "validation.json")
         if validation.get("dataset_version") not in {None, "CQ V4", "cq_v4"}:
             raise ValueError("validation.json không khai báo dataset_version CQ V4")
-        if validation.get("test_excluded") is not True:
+        bundle_manifest = _read_json(source / "bundle_manifest.json")
+        test_excluded = validation.get(
+            "test_excluded", bundle_manifest.get("test_excluded"),
+        )
+        if test_excluded is not True:
             raise ValueError("CQ V4 cần validation.test_excluded=true")
         splits = _read_json(source / "splits.json")
-        if str(splits.get("group_unit")) != "course_family_id":
+        group_unit = splits.get("group_unit")
+        if group_unit is None and _has_family_assignment(splits):
+            group_unit = "course_family_id"
+        if str(group_unit) != "course_family_id":
             raise ValueError("CQ V4 splits.json phải dùng group_unit=course_family_id")
         if int(splits.get("seed", 42)) != 42:
             raise ValueError("CQ V4 train/dev split phải dùng seed 42")
@@ -107,12 +115,14 @@ class CourseQualityV4Adapter(DatasetAdapter):
         row_ids_train = _row_ids(train)
         phase_train = phase_values.map({phase: i for i, phase in enumerate(PHASES)}).to_numpy(np.int8)
         family_train = _group_ids(train["course_family_id"])
+        course_train = _group_ids(train["course_id"])
         _save(output, "X_train", X_train)
         _save(output, "X_selector_train", X_selector)
         _save(output, "y_train", y_train)
         _save(output, "row_ids_train", row_ids_train)
         _save(output, "phase_train", phase_train)
         _save(output, "course_family_groups_train", family_train)
+        _save(output, "course_groups_train", course_train)
 
         rows_by_split_phase: dict[str, dict[str, int]] = {"train": {}}
         rows_by_split_phase["train"] = {
@@ -128,12 +138,14 @@ class CourseQualityV4Adapter(DatasetAdapter):
             y = _labels(frame["y_alpha_1"], f"dev {phase}")
             rows = _row_ids(frame, phase=phase)
             families = _group_ids(frame["course_family_id"])
+            courses = _group_ids(frame["course_id"])
             dev_families.update(int(value) for value in np.unique(families))
             for stem, value in (
                 (f"X_dev_phase{position}", X),
                 (f"y_dev_phase{position}", y),
                 (f"row_ids_dev_phase{position}", rows),
                 (f"course_family_groups_dev_phase{position}", families),
+                (f"course_groups_dev_phase{position}", courses),
             ):
                 _save(output, stem, value)
             rows_by_split_phase.setdefault("dev", {})[phase] = int(len(frame))
@@ -161,6 +173,12 @@ class CourseQualityV4Adapter(DatasetAdapter):
         _save(output, "X_fulltrain_a_train", _finite_matrix(full, learner_columns, "FullTrain-A"))
         _save(output, "y_fulltrain_a_train", _labels(full["y_alpha_1"], "FullTrain-A"))
         _save(output, "row_ids_fulltrain_a_train", _row_ids(full, phase="lambda1"))
+        _save(output, "course_groups_fulltrain_a_train", _group_ids(full["course_id"]))
+        _save(
+            output,
+            "course_family_groups_fulltrain_a_train",
+            _group_ids(full["course_family_id"]),
+        )
 
         contract = {
             "schema_version": 1,
@@ -240,9 +258,12 @@ def _labels(series: pd.Series, name: str) -> np.ndarray:
 
 
 def _row_ids(frame: pd.DataFrame, phase: str | None = None) -> np.ndarray:
-    columns = frame[["user_id", "course_id"]].copy()
-    columns["phase"] = frame["phase"].astype(str) if "phase" in frame else str(phase)
-    values = pd.util.hash_pandas_object(columns, index=False).to_numpy(np.uint64)
+    if "row_id" in frame:
+        identity = frame["row_id"].astype(str)
+    else:
+        identity = frame[["user_id", "course_id"]].copy()
+        identity["phase"] = frame["phase"].astype(str) if "phase" in frame else str(phase)
+    values = pd.util.hash_pandas_object(identity, index=False).to_numpy(np.uint64)
     if len(np.unique(values)) != len(values):
         raise ValueError("CQ V4 có row_id trùng trong một bảng")
     return values
@@ -250,6 +271,42 @@ def _row_ids(frame: pd.DataFrame, phase: str | None = None) -> np.ndarray:
 
 def _group_ids(series: pd.Series) -> np.ndarray:
     return pd.util.hash_pandas_object(series.astype(str), index=False).to_numpy(np.uint64)
+
+
+def _has_family_assignment(splits: dict[str, Any]) -> bool:
+    assignment = splits.get("course_assignment")
+    if not isinstance(assignment, dict) or not assignment:
+        return False
+    return all(
+        isinstance(value, dict) and value.get("course_family_id") not in {None, ""}
+        for value in assignment.values()
+    )
+
+
+def _verify_sha256s(source: Path) -> None:
+    failures: list[str] = []
+    checked = 0
+    for raw_line in (source / "SHA256SUMS.txt").read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        try:
+            expected, relative = line.split(maxsplit=1)
+        except ValueError:
+            failures.append(f"malformed:{line}")
+            continue
+        path = source / relative.lstrip("*")
+        if not path.is_file():
+            failures.append(f"missing:{relative}")
+            continue
+        checked += 1
+        if sha256_file(path) != expected.lower():
+            failures.append(f"mismatch:{relative}")
+    if checked == 0 or failures:
+        raise ValueError(
+            "CQ V4 SHA256SUMS không hợp lệ: "
+            f"checked={checked}, failures={failures}"
+        )
 
 
 def _save(output: Path, stem: str, value: np.ndarray) -> None:

@@ -331,9 +331,12 @@ def run_config(
                                 evaluation_split_count=len(eval_names),
                             )
                             row_key = f"row_ids_{eval_name}"
+                            course_key = f"course_groups_{eval_name}"
                             family_key = f"course_family_groups_{eval_name}"
                             if row_key in data:
                                 predictions["row_id"] = np.asarray(data[row_key])
+                            if course_key in data:
+                                predictions["course_id"] = np.asarray(data[course_key])
                             if family_key in data:
                                 predictions["course_family_id"] = np.asarray(data[family_key])
                             phase_policy = dict(config.artifact_policy or {})
@@ -1243,7 +1246,7 @@ def _save_evaluation(
             if probability_dtype not in {"float16", "float32", "float64"}:
                 raise ValueError("artifact_policy.probability_dtype không hợp lệ")
             payload["y_prob"] = np.asarray(predictions["y_prob"], dtype=probability_dtype)
-        for metadata_name in ("row_id", "course_family_id"):
+        for metadata_name in ("row_id", "course_id", "course_family_id"):
             if metadata_name in predictions:
                 metadata = np.asarray(predictions[metadata_name])
                 if len(metadata) != len(payload["y_pred"]):

@@ -217,6 +217,12 @@ def load_processed(dataset_id: str, processed_root: str | Path, mmap: bool = Tru
         phase_path = root / f"phase_{split}.npy"
         if phase_path.exists():
             result[f"phase_{split}"] = np.load(phase_path, mmap_mode=mode)
+        for metadata_stem in ("course_groups", "course_family_groups"):
+            metadata_path = root / f"{metadata_stem}_{split}.npy"
+            if metadata_path.exists():
+                result[f"{metadata_stem}_{split}"] = np.load(
+                    metadata_path, mmap_mode=mode,
+                )
     result["split_manifest"] = json.loads((root / "split_manifest.json").read_text(encoding="utf-8"))
     feature_contract_path = root / "feature_contract.json"
     result["feature_contract"] = (
@@ -230,7 +236,7 @@ def load_processed(dataset_id: str, processed_root: str | Path, mmap: bool = Tru
         if dev_feature_path.exists() and dev_label_path.exists():
             result[f"X_dev_phase{phase}"] = np.load(dev_feature_path, mmap_mode=mode)
             result[f"y_dev_phase{phase}"] = np.load(dev_label_path, mmap_mode=mode)
-            for metadata_stem in ("row_ids", "course_family_groups"):
+            for metadata_stem in ("row_ids", "course_groups", "course_family_groups"):
                 metadata_path = root / f"{metadata_stem}_dev_phase{phase}.npy"
                 if metadata_path.exists():
                     result[f"{metadata_stem}_dev_phase{phase}"] = np.load(
@@ -241,7 +247,10 @@ def load_processed(dataset_id: str, processed_root: str | Path, mmap: bool = Tru
         if feature_path.exists() and label_path.exists():
             result[f"X_test_phase{phase}"] = np.load(feature_path, mmap_mode=mode)
             result[f"y_test_phase{phase}"] = np.load(label_path, mmap_mode=mode)
-    for stem in ("X_fulltrain_a_train", "y_fulltrain_a_train", "row_ids_fulltrain_a_train"):
+    for stem in (
+        "X_fulltrain_a_train", "y_fulltrain_a_train", "row_ids_fulltrain_a_train",
+        "course_groups_fulltrain_a_train", "course_family_groups_fulltrain_a_train",
+    ):
         path = root / f"{stem}.npy"
         if path.exists():
             result[stem] = np.load(path, mmap_mode=mode)

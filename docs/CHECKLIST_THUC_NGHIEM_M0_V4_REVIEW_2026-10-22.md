@@ -3,10 +3,10 @@
 **Mục đích:** theo dõi toàn bộ việc bên thực nghiệm phải sửa và phải chạy để nộp
 điểm kiểm tra M0-V4 ngày 29/10/2026, đồng thời làm bảng đối chiếu gửi giảng viên.
 
-**Kết luận hiện tại:** hạ tầng code cốt lõi theo Review 22/10 đã được bổ sung và
-kiểm thử cục bộ; chưa thể tuyên bố hoàn thành M0-V4 vì chưa nhận gói dữ liệu V4
-đạt contract và chưa chạy các bảng FullTrain, headroom, QĐ16 trên V4. Test V4
-tiếp tục khóa đến khi giảng viên duyệt freeze manifest tại M1 ngày 08/11/2026.
+**Kết luận hiện tại:** hạ tầng code cốt lõi theo Review 22/10 đã được bổ sung;
+gói CQ V4 dev-only đã nhận, kiểm hash và ingest thành công. M0-V4 vẫn chưa hoàn
+thành vì chưa chạy FullTrain, headroom và QĐ16 trên V4. Test V4 tiếp tục khóa đến
+khi giảng viên duyệt freeze manifest tại M1 ngày 08/11/2026.
 
 **Nhánh làm việc:** `cq-v1-protocol-fixes`
 **HEAD nền của lô sửa:** `82c878a59c48689c45350b34c8f3ee92fc11b082`
@@ -25,25 +25,25 @@ tiếp tục khóa đến khi giảng viên duyệt freeze manifest tại M1 ng�
 
 | ID review | Yêu cầu phải đáp ứng | Phần code/hạ tầng đã làm | Bằng chứng còn phải tạo | Trạng thái | Hạn |
 | :-- | :-- | :-- | :-- | :-- | :-- |
-| QĐ18 | Chỉ làm train/dev đến M1; test V4 chỉ mở sau freeze | Adapter V4 từ chối mọi file test; config M0 đều `test_locked=true` | Manifest V4 chứng minh `test_excluded=true`; archive notebook không có test | **PARTIAL / BLOCKED-DATA** | 29/10 |
-| QĐ19, R3 | Tạo `course_family_id` bằng connected components Jaccard ccid 0,9, tối thiểu 5 ccid; sensitivity 0,8 | `cq_v4_protocol.py`: family tất định, singleton cho khóa thiếu/ít ccid; test transitivity/determinism | Mapping đủ 1.808 khóa, thống kê family và báo cáo ngưỡng 0,8 từ nhóm dữ liệu | **PARTIAL / BLOCKED-DATA** | 24–26/10 |
-| QĐ19 | Test là 20% family mở muộn nhất; phần còn lại train/dev 70:10, seed 42, stratify quartile cỡ × `has_E` | Có hàm split và contract test số lượng, tính tất định, không mất family | `splits.json`, hash, `family_splits.parquet`, `course_splits.parquet`; audit leakage = 0 | **PARTIAL / BLOCKED-DATA** | 24–26/10 |
-| QĐ19 | Fit preprocessing lại chỉ trên train V4; giữ hai feature view | Adapter V4 không tự fit/impute; kiểm selector view thuộc learner view và cấm ID/target lọt vào X | Feature lists, preprocessing manifest, finite checks từ V4 thực | **PARTIAL / BLOCKED-DATA** | 26/10 |
-| O20 | Báo concentration và bootstrap theo family | Có `concentration`; bootstrap nhận và ghi `resampling_unit=course_family_id` | Largest share/effective families dev/test; CI 2.000 bootstrap cho các contrast | **PARTIAL / BLOCKED-DATA** | 29/10 |
+| QĐ18 | Chỉ làm train/dev đến M1; test V4 chỉ mở sau freeze | Adapter V4 từ chối mọi file test; config M0 đều `test_locked=true` | Bundle dev-only đã xác nhận không có test; tiếp tục kiểm archive notebook | **READY-TO-RUN** | 29/10 |
+| QĐ19, R3 | Tạo `course_family_id` bằng connected components Jaccard ccid 0,9, tối thiểu 5 ccid; sensitivity 0,8 | Code protocol và dữ liệu thực đều có; 1.740 family/1.808 course, báo cáo 0,8 đi kèm | Đưa thống kê và hash vào báo cáo M0 | **ĐÃ NHẬN DỮ LIỆU** | 24–26/10 |
+| QĐ19 | Test là 20% family mở muộn nhất; phần còn lại train/dev 70:10, seed 42, stratify quartile cỡ × `has_E` | Bundle có `splits.json`, `family_splits.parquet`, `course_splits.parquet`; adapter xác nhận train–dev family overlap = 0 | Đưa audit/hash vào báo cáo M0 | **ĐÃ NHẬN DỮ LIỆU** | 24–26/10 |
+| QĐ19 | Fit preprocessing lại chỉ trên train V4; giữ hai feature view | Bundle có 56 feature selector và 62 feature learner; adapter kiểm finite/subset và không tự fit lại | Ghi hash preprocessing/feature lists trong archive chạy | **READY-TO-RUN** | 26/10 |
+| O20 | Báo concentration và bootstrap theo family | Data card đã có largest share/effective course; bootstrap nhận `resampling_unit=course_family_id` | Chạy CI 2.000 family-bootstrap cho các contrast mô hình | **PARTIAL / READY-TO-RUN** | 29/10 |
 | QĐ20, O21 | Ứng viên thứ ba là SKQ-PC-√, quota tỷ lệ căn bậc hai, floor 20 | Đã đăng ký `skq_pc_sqrt`; exact bounded sqrt allocation; kết quả unit contract trên số V3 là E/G/A = 35/221/386 mỗi phase | Chạy ba candidate trên dev V4 tại rho* và báo per-class | **PARTIAL** | 29/10 hạ tầng; 06/11 panel |
 | QĐ20 | SKQ-PC-R chuyển thành ablation A3 | Registry đổi role thành `ablation`, evidence `appendix`; không còn trong danh sách calibration candidate | Chạy A3 ở giai đoạn ablation sau khi chốt winner | **DEFERRED-M1** | 30/10–06/11 |
 | QĐ20 | C03 chính dùng cùng allocation với winner; C03 tỷ lệ chỉ báo mô tả | C03 nhận `allocation_policy` và `allocation_floor`; cùng gọi một allocator với SKQ-PC-√ | Sau khi chọn winner, khóa config C03 cùng quota; chạy thêm C03 proportional | **PARTIAL** | 30/10–06/11 |
 | QĐ20 | A2 dùng cùng allocation với winner | Allocator dùng chung đã có | Nối option vào config A2 sau khi winner được chốt | **CHƯA LÀM** | 30/10–06/11 |
-| QĐ21 | Main dùng natural class weight; balanced chỉ sensitivity; target `y_alpha_1` | Config V4 FullTrain/headroom dùng natural; adapter V4 chỉ đọc `y_alpha_1` | Chạy balanced sensitivity riêng, không trộn bảng chính | **PARTIAL / BLOCKED-DATA** | 29/10 |
-| QĐ21 | `nmin=30`, `delta_C=0,01`, `delta=0,005`; EC và signed deviation là endpoint course | Hạ tầng course metrics và thống kê hiện có; data handoff đã yêu cầu đúng trường | Báo số course đủ `nc>=30`, EC, signed deviation, ICC và sàn EC dev | **BLOCKED-DATA** | 29/10 |
-| QĐ21, QĐ12 | Headroom V4 tại 0,5/1/2/5%, C02 5 seed 11/29/47/71/101 | Đã có 4 config V4 5 seed và `compute_cq_v4_headroom.py`; output ghi SD/SE input seed | Chạy 20 selection-seed cells × 4 dev phase; tính rho* và CI family-bootstrap | **READY-TO-RUN / BLOCKED-DATA** | 26–29/10 |
-| QĐ22, O23 | FullTrain-A là snapshot lambda=1 đúng cohort train V4, không phải P4 | Có adapter kiểm cohort A=B; có method `c00_full_train_a`; runner fit A rồi evaluate cùng dev P1–P4; config riêng | Nhóm dữ liệu dựng snapshot; chạy XGB natural; báo cạnh FullTrain-B | **READY-TO-RUN / BLOCKED-DATA** | 26–29/10 |
+| QĐ21 | Main dùng natural class weight; balanced chỉ sensitivity; target `y_alpha_1` | Config và bundle V4 khóa `y_alpha_1`; main dùng natural | Chạy balanced sensitivity riêng, không trộn bảng chính | **READY-TO-RUN** | 29/10 |
+| QĐ21 | `nmin=30`, `delta_C=0,01`, `delta=0,005`; EC và signed deviation là endpoint course | Data card có 67 course dev đủ `nc>=30`, ICC và oracle floor; predictions giờ giữ course/family ID | Chạy mô hình và báo EC/signed deviation thực | **READY-TO-RUN** | 29/10 |
+| QĐ21, QĐ12 | Headroom V4 tại 0,5/1/2/5%, C02 5 seed 11/29/47/71/101 | Đã có 4 config V4 5 seed và `compute_cq_v4_headroom.py`; output ghi SD/SE input seed | Chạy 20 selection-seed cells × 4 dev phase; tính rho* và CI family-bootstrap | **READY-TO-RUN** | 26–29/10 |
+| QĐ22, O23 | FullTrain-A là snapshot lambda=1 đúng cohort train V4, không phải P4 | Bundle có 131.906 dòng FullTrain-A; adapter xác nhận cohort A=B; runner đánh giá dev P1–P4 | Chạy XGB natural và báo cạnh FullTrain-B | **READY-TO-RUN** | 26–29/10 |
 | QĐ22, O22 | Kernel Thinning phải là classwise Compress++; nếu sau shard vẫn >3 giờ thì TIMEOUT | Đã thay KT trực tiếp bằng classwise shard → upstream `compresspp_kt` → KT exact; diagnostics ghi upstream, shard, candidate, prepool, timeout 10.800 s | Chạy fidelity G10; chạy lại QĐ16; lưu checkpoint/time/RSS; nếu >3 giờ ghi TIMEOUT | **PARTIAL** | 26–29/10 |
-| QĐ23 | Repo public, không rewrite history; không commit dữ liệu/prediction dòng | Không có code rewrite; checklist đóng gói chỉ cho phép code/config/docs/summary | Sửa tài liệu ghi private; kiểm allowlist trước commit | **CHƯA ĐÓNG** | 24/10 |
-| O24 | Data card nêu căn cứ/phiên bản nhãn và khác biệt với LoDiBi/TEMPO-DQ | Yêu cầu dữ liệu đã mô tả trường bắt buộc | Data card V4, mapping feature, P95/sentiment/NULL/chapter -1, danh sách deviation xin duyệt | **BLOCKED-DATA** | 29/10 |
+| QĐ23 | Repo public, không rewrite history; không commit dữ liệu/prediction dòng | Nhánh hạ tầng đã push; dữ liệu, ZIP và processed arrays vẫn untracked/ignored | Sửa nốt tài liệu ghi private; kiểm allowlist ở mọi commit sau | **PARTIAL** | 24/10 |
+| O24 | Data card nêu căn cứ/phiên bản nhãn và khác biệt với LoDiBi/TEMPO-DQ | Đã nhận Data Card V4, formula policy, feature dictionary và mô tả P95/sentiment/NULL/chapter -1 | Xin giảng viên duyệt deviation không đối chiếu TEMPO-DQ và human review 20 cặp | **PARTIAL / CHỜ DUYỆT** | 29/10 |
 | Y17 | `references.bib` đủ tài liệu và DOI | Chưa thuộc lô sửa code này | Bổ sung 21 tài liệu và tài liệu Neyman 1934; chạy kiểm tra citation | **CHƯA LÀM** | 29/10 |
 | Y18 | Sửa mọi tài liệu ghi repo private | Chưa sửa toàn bộ | Tìm toàn repo và sửa theo QĐ23 | **CHƯA LÀM** | 24/10 |
-| Y19 | Hợp nhánh vào main, không squash; tạo tag `review-2026-10-22` | Lô sửa còn local; chưa commit/push | Review diff, commit theo lô, push, PR, merge commit, tag | **CHƯA LÀM** | 24–29/10 |
+| Y19 | Hợp nhánh vào main, không squash; tạo tag `review-2026-10-22` | Nhánh `cq-v1-protocol-fixes` đã có commit hạ tầng và được push | Mở PR, merge commit vào main và tạo tag sau khi evidence V4 đạt | **PARTIAL** | 24–29/10 |
 | Y20 | Thống nhất tên V1, V3, V4 trong archive/manifest | Code mới dùng `course_quality_v4` và `CQ V4` | Kiểm tên mọi notebook/archive/report mới | **PARTIAL** | 24/10 |
 | Y21 | Tinh chỉnh LR theo lưới 8 cấu hình, vẫn không hội tụ thì ghi descriptive | Config V4 hiện mới khóa XGB cho M0 headroom | Tạo config LR grid, chạy FullTrain-A/B dev, lưu convergence diagnostics | **CHƯA LÀM** | 29/10 |
 | Y22 | Headroom phải có mean, SD, SE, số seed | Hàm headroom giữ toàn bộ seed values; script V4 khóa 5 seed | Bổ sung bảng xuất cuối cùng có SD, SE, Delta, CI half-width và cờ đạt | **PARTIAL** | 29/10 |
@@ -70,25 +70,28 @@ tiếp tục khóa đến khi giảng viên duyệt freeze manifest tại M1 ng�
 - [x] Thêm `cq_patch_1022.py` và đúng sáu test yêu cầu.
 - [x] Kiểm tra cấu hình: cả 6 config V4 đọc và validate thành công.
 - [x] Kiểm thử tập trung: 62/62 test liên quan Review 22/10 chạy đạt cục bộ.
-- [x] Regression toàn repo: 194/194 test chạy đạt sau lô sửa.
+- [x] Regression toàn repo: 195/195 test chạy đạt sau tích hợp bundle V4 thực.
+- [x] Adapter kiểm SHA-256 của bundle, giữ `course_id` và `course_family_id` trong
+  prediction artifacts để tính endpoint cấp khóa/family.
 
 ## 4. Việc phải làm ngay khi nhận CQ V4
 
 ### 4.1. Gate bàn giao dữ liệu trước khi chạy máy
 
-- [ ] Đủ các file bắt buộc trong `docs/YEU_CAU_BAN_GIAO_DU_LIEU_CQ_V4_2026-10-22.md`.
-- [ ] `dataset_version` thống nhất là CQ V4.
-- [ ] `validation.test_excluded=true`; không có test parquet/CSV/NPY trong bundle.
-- [ ] `splits.json`: group unit `course_family_id`, seed 42, tỷ lệ 70:10:20.
-- [ ] Hash của split, feature list, preprocessing và manifest đầy đủ.
-- [ ] Không giao family giữa train/dev; test assignment chỉ kiểm metadata/hash ở M0,
+- [x] Đủ runtime files bắt buộc để chạy dev V4.
+- [x] `dataset_version` thống nhất là CQ V4.
+- [x] `bundle_manifest.test_excluded=true`; không có test parquet/CSV/NPY trong bundle.
+- [x] `splits.json`: group unit thực tế là `course_family_id`, seed 42, tỷ lệ 70:10:20.
+- [x] 26/26 hash của split, feature list, preprocessing, manifest và Parquet khớp.
+- [x] Không giao family giữa train/dev; test assignment chỉ kiểm metadata/hash ở M0,
   không mount feature/label test.
-- [ ] Có sensitivity Jaccard 0,8 bên cạnh split chính 0,9.
-- [ ] Có concentration, temporal overlap và cờ NOLFO nếu overlap >5%.
-- [ ] Pool B có train và dev P1–P4, hai feature view, metadata thẳng hàng.
-- [ ] FullTrain-A lambda=1 có đúng cohort train Pool B, không có dev/test row.
-- [ ] Data card ghi class distribution, family/course/enrollment, lớp E, `nc>=30`, ICC,
-  sàn EC, old/new user/instructor và mapping TEMPO-DQ.
+- [x] Có sensitivity Jaccard 0,8 bên cạnh split chính 0,9.
+- [x] Có concentration, temporal overlap 75,7998% và `requires_nolfo=true`.
+- [x] Pool B có train và dev P1–P4, hai feature view, metadata thẳng hàng.
+- [x] FullTrain-A lambda=1 đúng 131.906 enrollment của train Pool B, không có dev/test row.
+- [x] Data card ghi class distribution, family/course/enrollment, lớp E, `nc>=30`, ICC,
+  sàn EC và old/new user/instructor.
+- [ ] Xin duyệt bằng văn bản việc không đối chiếu TEMPO-DQ theo phạm vi người dùng chốt.
 
 ### 4.2. Prepare và kiểm tra code
 
@@ -273,7 +276,7 @@ minh phương pháp thắng baseline, không mở test và không bảo đảm c
 | Ngày giờ | Người cập nhật | Thay đổi | Bằng chứng |
 | :-- | :-- | :-- | :-- |
 | 22/10/2026 | Nhóm thực nghiệm | Sửa allocator/candidate, C03, Compress++, family protocol, bootstrap, adapter FullTrain-A/V4, config headroom 5 seed | 62/62 targeted tests; 194/194 full regression; 6 config V4 validate |
-|  |  | Nhận và validate CQ V4 |  |
+| 22/10/2026 | Nhóm thực nghiệm | Nhận và validate CQ V4 dev-only; sửa adapter theo schema bàn giao | 26/26 SHA khớp; 188/188 validation; 14/14 independent; ingest thành công; 195/195 test |
 |  |  | Chạy FullTrain-A/B |  |
 |  |  | Chạy headroom và khóa rho* |  |
 |  |  | Chạy QĐ16 |  |
