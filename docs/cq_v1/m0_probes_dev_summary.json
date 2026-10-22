@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "split": "dev_only",
+  "test_read": false,
+  "D02": {
+    "course_id_probe": {
+      "columns": [
+        "course_id"
+      ],
+      "macro_f1": 0.2515652592711511,
+      "unseen_rate_dev": {
+        "course_id": 1.0
+      }
+    },
+    "teacher_school_probe": {
+      "columns": [
+        "teacher_set_code",
+        "school_set_code"
+      ],
+      "macro_f1": 0.25094331324352925,
+      "unseen_rate_dev": {
+        "teacher_set_code": 0.0,
+        "school_set_code": 0.0
+      }
+    },
+    "new_learner_rate_dev": 0.9374435993296377,
+    "majority_reference": {
+      "majority_label": 2,
+      "macro_f1": 0.2515652592711511
+    }
+  },
+  "D04": {
+    "status": "SKIPPED_BY_FLAG"
+  },
+  "D05": {
+    "P1": {
+      "majority_label": 2,
+      "macro_f1": 0.2515652592711511
+    },
+    "P2": {
+      "majority_label": 2,
+      "macro_f1": 0.2515652592711511
+    },
+    "P3": {
+      "majority_label": 2,
+      "macro_f1": 0.2515652592711511
+    },
+    "P4": {
+      "majority_label": 2,
+      "macro_f1": 0.2515652592711511
+    }
+  },
+  "D03": {
+    "status": "BLOCKED_RAW_PREIMPUTATION_REQUIRED"
+  },
+  "D06": {
+    "status": "BLOCKED_RAW_EVENT_TIMESTAMPS_REQUIRED"
+  }
+}

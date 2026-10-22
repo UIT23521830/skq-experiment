@@ -5,6 +5,7 @@ herding và QP dùng chung để ablation không vô tình khác nhau ở phần
 """
 
 from .structured_kquad import StructuredKQuadSelector
+from .skq_pc import SKQPCSelector
 
-__all__ = ["StructuredKQuadSelector"]
+__all__ = ["SKQPCSelector", "StructuredKQuadSelector"]
 

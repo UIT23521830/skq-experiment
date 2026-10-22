@@ -1,0 +1,260 @@
+\documentclass[runningheads]{llncs}
+
+\usepackage[T5]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{xcolor}
+
+\newcommand{\todoitem}[1]{\par\noindent\textcolor{red}{[TODO: #1]}\par}
+
+\title{Early Course-Quality Prediction under a Small Training Budget}
+\titlerunning{Early Course-Quality Prediction}
+\author{Anonymous Authors}
+\authorrunning{Anonymous Authors}
+\institute{Anonymous Institution}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We study training-set compression for early course-quality prediction from four
+cumulative behavioural snapshots.  The development protocol evaluates both
+enrolment-level utility (UL) and course-level estimation error (EC), while
+measuring selector time and memory under a fixed training budget.  This M0
+manuscript records the data and evaluation protocol only.  Candidate selection,
+confirmatory test results, and performance claims remain intentionally sealed
+until the M1 freeze.
+\keywords{Course quality prediction \and coreset selection \and early prediction \and imbalanced learning}
+\end{abstract}
+
+\section{Introduction}
+Early warning systems are most useful when they can be updated repeatedly as a
+course unfolds.  In our setting, each learner--course pair is represented at
+25\%, 50\%, 75\%, and 90\% of its observation window.  Training on all four
+snapshots is expensive and highly redundant, which motivates selecting a small,
+weighted subset of the development training pool.
+
+Selection quality cannot be judged by enrolment classification alone.  The
+same predictions are aggregated to estimate course-level quality, and a method
+may improve macro-F1 while distorting class mass or the resulting course
+estimate.  We therefore register two endpoints: UL at the enrolment level and
+EC at the course level.  Rare-class metrics, calibration, exact or realised
+budget, wall time, and memory are reported rather than hidden behind one score.
+
+At M0, our contribution is a leakage-controlled experimental protocol and an
+auditable implementation.  It provides course-disjoint development data,
+train-only preprocessing, four-phase reuse of one fitted model, baseline
+fidelity checks, and measured resource gates.  The final methodological
+contribution is deliberately not stated before candidate selection and the
+novelty audit are complete.
+
+\section{Related Work}
+\subsection{Early Course-Quality Prediction}
+Prior early-prediction systems motivate phase-specific behavioural snapshots
+and the separation of learner-level prediction from course-level monitoring.
+Our operational target is a formula-derived quality index rather than a
+human-validated judgement, so all claims are restricted to this definition and
+dataset.  A direct feature-by-feature comparison with TEMPO-DQ and LoDiBi is
+retained as an M0 approval item rather than asserted from names alone.
+\subsection{Coresets and Data Selection for Tabular Classification}
+Dataset condensation can construct synthetic training examples by matching
+training gradients \cite{zhao2021datasetcondensation}; this differs from our
+subset-selection contract, which must return traceable source rows.  Kernel
+thinning provides distribution-compression guarantees in an RKHS but has a
+quadratic-time form in its general construction \cite{dwivedi2024kernel}; our
+classwise implementation is therefore resource-gated and labelled as an
+adaptation.  CoreTab is included from a commit-pinned software source
+\cite{hadarcoretabsoftware}; its native interface is binary, and the multiclass
+one-vs-all baseline is explicitly labelled adapted rather than native.
+\subsection{Multiclass and Imbalanced Selection}
+The three classes are strongly imbalanced, making overall accuracy inadequate.
+Our controls include stratified random selection and phase--class stratified
+selection.  Candidate methods must preserve feasible class coverage and report
+realised mass.  The one-vs-all CoreTab adapter allocates class quotas by largest
+remainder and never pads missing rows.  These engineering choices are controls,
+not novelty claims.
+
+\section{Problem Formulation}
+Let $k$ denote a learner, $c$ a course, and
+$p\in\{1,2,3,4\}$ an observation phase.  The vector $x_{kcp}$ contains only
+information observed no later than the phase cutoff.  The final quality index
+$q_{kc}\in[0,1]$ is fixed across phases and lower values are better.  Its class
+label is
+\[
+y_{kc}=\begin{cases}
+E,&q_{kc}<0.2,\\
+G,&0.2\le q_{kc}<0.4,\\
+A,&q_{kc}\ge 0.4.
+\end{cases}
+\]
+
+Pool B concatenates the four training snapshots and has $N$ rows.  At budget
+$\rho$, a selector returns source-row indices $S$, non-negative weights $w_i$,
+and a realised size $m\le\lfloor\rho N\rfloor$.  Exact-budget methods require
+equality; native methods with smaller output report their realised size and are
+compared at that size.  Effective learner weights are normalised to mean one.
+
+UL is macro-F1 over enrolment labels, accompanied by MCC, balanced accuracy,
+per-class precision/recall/F1, PR-AUC, log loss, and calibration.  Course
+quality is estimated by probabilistic class counts (PCC):
+\[
+\widehat Q_c=\sum_{j\in\{E,G,A\}}\widehat\pi_{cj}\,\mu_j,
+\]
+where $\mu_j$ is computed from training enrolments only.  EC is the mean
+absolute difference between $\widehat Q_c$ and the observed course mean among
+courses satisfying the approved minimum-enrolment threshold.  Class-count
+aggregation is retained as a sensitivity analysis.
+
+\section{Data and Protocol}
+\subsection{CQ V3 and Phase Snapshots}
+CQ V3 is derived from a fixed MOOCCubeX project snapshot.  It removes 129,400
+labelled learner--course pairs whose only observed chapter is the unresolved
+bucket, retaining 178,598 labelled pairs, 168,410 learners, and 1,808 courses.
+The primary target uses $\alpha=1$ in the registered quality formula.  P1--P4
+use cumulative windows ending at 25\%, 50\%, 75\%, and 90\% of the observed
+learner--course interval.  Labels remain fixed while features are recomputed at
+each cutoff.  The target is formula-derived and has not been externally
+validated as expert-rated course quality.
+
+The M0 bundle is private and physically excludes test Parquet files.  It also
+excludes full-cohort feature shards, sequences, intermediate stages, and the
+overlapping default split.  A manifest records a SHA-256 digest for every
+included file.
+\subsection{Splits and Leakage Controls}
+The selected source split assigns 1,265/181/362 courses and
+128,407/16,301/33,890 learner--course pairs to train/dev/test.  No course ID is
+shared across splits.  This is a random course split, not a temporal or SGKF
+split; its use beyond conditional M0 evidence requires supervisor approval.
+Whether \texttt{course\_id} is identical to the intended
+\texttt{course\_root\_id} also remains an explicit approval item.  Test is
+sealed until an approved M1 freeze.
+
+The learner view contains 57 numeric and five categorical variables.  The
+selector view contains 56 numeric behavioural variables: it removes
+\texttt{phase\_fraction}, all identifier codes, target columns, and
+target-derived quantities.  Median imputation and standardisation are fitted
+once on the concatenated P1--P4 training pool and then reused for every dev
+phase.  Missingness masks are diagnostic only and never enter either production
+view.
+\subsection{Endpoints and Protocol Constants}
+Class-conditional means $\mu_E,\mu_G,\mu_A$ are estimated from training data and
+must satisfy both their registered class intervals and
+$\mu_E<\mu_G<\mu_A$.  The UL non-inferiority margin is fixed at 0.005.  The
+minimum course size and EC margin remain provisional until the V3 data card and
+oracle floor are approved; we do not tune them on test.
+
+\section{Method}
+\todoitem{Describe only the final approved candidate. Keep unselected candidates as ablations.}
+\subsection{Selection and Allocation}
+\todoitem{Mathematical objective, allocation constraints, exact/realized budget, and weight normalization.}
+\subsection{Complexity and Resource Policy}
+\todoitem{Measured 50k/200k/800k calibration, log--log extrapolation, and three-hour selector cap.}
+
+\section{Experimental Design}
+M0 compares FullTrain-B under natural and balanced class weighting using
+logistic regression and XGBoost.  The headroom control is stratified random
+selection at 0.5\%, 1\%, 2\%, and 5\%, with selector seeds 11, 29, and 47.
+The M1 panel includes uniform and phase--class random controls, Gonzalez
+k-center, adapted CoreTab-XGB OVA, BDIS at realised size, Moderate-DS, CCS,
+Data-OOB, and classwise Kernel Thinning.  Blocked, failed, timeout, and OOM runs
+remain rows in the result table and are never replaced by proxies.
+
+The paired development unit is dataset--phase--selector seed--learner; phases
+are repeated evaluations of one fitted model, not independent replicates.
+Confirmatory analysis will report paired differences, clustered bootstrap
+confidence intervals by course, Friedman tests across the frozen panel, and
+pre-registered Wilcoxon contrasts with Holm correction.  These analyses remain
+disabled until M1 freeze.
+
+\section{Results}
+\subsection{Development Results}
+\paragraph{Migration to CQ V3 (21 October 2026).}
+The current M0 pipeline uses a 104,580,461-byte development bundle with SHA-256
+\nolinkurl{9F60946C140B7E16EE1F9BB3D94FC21BBEC898F476BE669416EBD6E4C55995A6}.
+Sixty-one local protocol tests passed.  The course-ID-only P4 probe matched the
+majority macro-F1 (0.269207).  A balanced multinomial missing-mask probe, used
+for diagnosis only, obtained mean macro one-vs-rest ROC-AUC 0.610703 across the
+four dev phases.  A private cutoff checklist sampled five cases per phase;
+all 20 had maximum feature-event time no later than cutoff and zero recorded
+out-of-window events.  Shuffled-label XGBoost, V3 FullTrain-B, and the V3
+headroom decision are executed by the pinned Kaggle T4 cell and are not filled
+from the V2 numbers below.
+
+\paragraph{M0 headroom evidence (21 October 2026).}
+The registered development-only headroom run compared FullTrain-B with C02 at
+four training budgets.  XGBoost with natural class weighting was reused across
+the four temporal phases; selector seeds were 11, 29, and 47.  All 52 expected
+evaluation records completed, all 54 protocol tests passed, and no test metric
+was opened.  Table~\ref{tab:m0-headroom} reports the phase-aggregated
+development endpoint used by the registered decision rule.
+
+\begin{table}[t]
+\centering
+\caption{M0 development-only headroom evidence.  The reference FullTrain-B UL
+is 0.654338.  The gap is FullTrain-B UL minus mean C02 UL; none of the four
+budgets reaches the registered 0.01 threshold.}
+\label{tab:m0-headroom}
+\begin{tabular}{rrrr}
+\toprule
+Budget $\rho$ & Mean C02 UL & Gap & Eligible \\
+\midrule
+0.5\% & 0.650153 &  0.004185 & no \\
+1\%   & 0.655179 & -0.000842 & no \\
+2\%   & 0.647283 &  0.007055 & no \\
+5\%   & 0.652001 &  0.002337 & no \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Because no candidate budget met the threshold, the preregistered fallback rule
+selected the smallest budget, $\rho^\star=0.005$.  This is a protocol decision,
+not evidence that 0.5\% dominates every larger budget: the three selector seeds
+show material variability.  The earlier 2\% screening remains diagnostic only
+and cannot be used as the QD16 resource decision at $\rho^\star$.
+
+\paragraph{Evidence integrity and current status.}
+The immutable archive is
+\nolinkurl{skq_cq_v1_m0_headroom_2026_10_21.tar.gz}, with SHA-256
+\nolinkurl{2839B7D1AF1284999DD1AC1ED406058A9D875E7048A5FB77E2C82AD3EE4EE4A3},
+produced at repository commit
+\nolinkurl{9b07f6f769d8504a2555bf6608411c8f5131f8be}.  M0 remains
+\textbf{PARTIAL}: QD12 headroom is complete, while QD16 still requires the ten
+fixed selectors and three candidates at $\rho^\star=0.005$; FullTrain-A, LR
+tuning, group-unit confirmation, and the remaining raw-data checks are also
+open.  Therefore these data do not authorize M1 freezing or test opening.
+
+\paragraph{Partial QD16 checkpoint.}
+At $\rho^\star=0.005$, nine of the thirteen registered selectors completed all
+three calibration sizes and three replicates.  All 17 QD16 tests passed.  The
+largest completed upper runtime predictions were 5216.48 seconds for adapted
+CoreTab-XGB OVA, 2128.58 seconds for GCoreSet, and 593.04 seconds for Data-OOB;
+Data-OOB had an upper predicted peak RSS of 20.82 GiB.  Kernel Thinning and the
+three SKQ candidates remain unresolved, so no complete development/test
+resource schedule or QD16 PASS is reported.
+\subsection{Confirmatory Results}
+\todoitem{Populate only after M1 freeze and one-time test opening.}
+\subsection{Ablations and Failure Analysis}
+\todoitem{Rare-class recall, class-mass error, QP versus uniform, and runtime/quality Pareto.}
+
+\section{Discussion}
+The protocol separates evidence quality from model quality.  A successful
+notebook does not imply M0 GO if the split, group unit, or resource panel is
+unresolved.  The present target is an operational proxy, the split is random by
+course, users may recur across splits, and course end is defined retrospectively
+from observed activity.  Missingness is predictive, the rare class is below one
+percent in the full V3 cohort, and course-level EC depends strongly on the
+approved minimum course size.  These limitations preclude claims of causal,
+cross-platform, or expert-rated course quality.
+
+\section{Conclusion}
+M0 establishes an auditable development protocol and identifies the decisions
+required before confirmatory evaluation.  The next stage may proceed on
+train/dev only after conditional approval; test remains sealed until the group
+unit, split deviation, FullTrain-A treatment, resource decision, and M1 freeze
+are resolved.
+
+\bibliographystyle{splncs04}
+\bibliography{references}
+\end{document}

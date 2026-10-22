@@ -193,16 +193,58 @@ def load_processed(dataset_id: str, processed_root: str | Path, mmap: bool = Tru
     mode = "r" if mmap else None
     result: dict[str, Any] = {}
     for split in ("train", "dev", "test"):
-        result[f"X_{split}"] = np.load(root / f"X_{split}.npy", mmap_mode=mode)
-        result[f"y_{split}"] = np.load(root / f"y_{split}.npy", mmap_mode=mode)
-        result[f"row_ids_{split}"] = np.load(root / f"row_ids_{split}.npy", mmap_mode=mode)
+        required = split in {"train", "dev"}
+        paths = {
+            "X": root / f"X_{split}.npy",
+            "y": root / f"y_{split}.npy",
+            "row_ids": root / f"row_ids_{split}.npy",
+        }
+        missing = [name for name, path in paths.items() if not path.exists()]
+        if missing:
+            if required:
+                raise FileNotFoundError(
+                    f"Processed dataset {dataset_id} thiếu {split}: {missing}"
+                )
+            # M0 development bundles intentionally omit every test array.  The
+            # confirmatory runner will still fail closed when test is requested.
+            continue
+        result[f"X_{split}"] = np.load(paths["X"], mmap_mode=mode)
+        result[f"y_{split}"] = np.load(paths["y"], mmap_mode=mode)
+        result[f"row_ids_{split}"] = np.load(paths["row_ids"], mmap_mode=mode)
+        selector_path = root / f"X_selector_{split}.npy"
+        if selector_path.exists():
+            result[f"X_selector_{split}"] = np.load(selector_path, mmap_mode=mode)
+        phase_path = root / f"phase_{split}.npy"
+        if phase_path.exists():
+            result[f"phase_{split}"] = np.load(phase_path, mmap_mode=mode)
     result["split_manifest"] = json.loads((root / "split_manifest.json").read_text(encoding="utf-8"))
+    feature_contract_path = root / "feature_contract.json"
+    result["feature_contract"] = (
+        json.loads(feature_contract_path.read_text(encoding="utf-8"))
+        if feature_contract_path.exists()
+        else None
+    )
     for phase in range(1, 5):
+        dev_feature_path = root / f"X_dev_phase{phase}.npy"
+        dev_label_path = root / f"y_dev_phase{phase}.npy"
+        if dev_feature_path.exists() and dev_label_path.exists():
+            result[f"X_dev_phase{phase}"] = np.load(dev_feature_path, mmap_mode=mode)
+            result[f"y_dev_phase{phase}"] = np.load(dev_label_path, mmap_mode=mode)
+            for metadata_stem in ("row_ids", "course_family_groups"):
+                metadata_path = root / f"{metadata_stem}_dev_phase{phase}.npy"
+                if metadata_path.exists():
+                    result[f"{metadata_stem}_dev_phase{phase}"] = np.load(
+                        metadata_path, mmap_mode=mode,
+                    )
         feature_path = root / f"X_test_phase{phase}.npy"
         label_path = root / f"y_test_phase{phase}.npy"
         if feature_path.exists() and label_path.exists():
             result[f"X_test_phase{phase}"] = np.load(feature_path, mmap_mode=mode)
             result[f"y_test_phase{phase}"] = np.load(label_path, mmap_mode=mode)
+    for stem in ("X_fulltrain_a_train", "y_fulltrain_a_train", "row_ids_fulltrain_a_train"):
+        path = root / f"{stem}.npy"
+        if path.exists():
+            result[stem] = np.load(path, mmap_mode=mode)
     return result
 
 

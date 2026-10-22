@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "evidence_id": "EV-G10-FIDELITY-001",
+  "requirement_ids": [
+    "O5",
+    "G10",
+    "FID-01"
+  ],
+  "created_at_utc": "2026-10-16T08:23:58.277150+00:00",
+  "code_commit": "fb4bd97a47f1c897b029199a4648b9b39d9d0317",
+  "config_hash": null,
+  "split_hash": null,
+  "run_ids": [
+    "g10-toy-20261016-seed20261014"
+  ],
+  "artifact_sha256": {
+    "skq_g10_kaggle_t4.tar.gz": "4fae924fd14f2a0032ba03ccdb007bf5a1ad6fcf8984bb180417a1bb3c5ab0e5"
+  },
+  "visibility": "public_manifest",
+  "producer_command": "Kaggle T4: capture_kaggle_environment.py; run_method_fidelity_toys.py --device cuda; audit_method_fidelity.py --require-passed-toys",
+  "status": "pass",
+  "manifest_id": "0e70a97a0cbe05cc8fa8aaafe2ecf7844a137d76a90838a94871266210effced"
+}

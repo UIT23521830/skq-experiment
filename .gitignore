@@ -11,6 +11,7 @@ htmlcov/
 
 data/raw/**
 data/processed/**
+/data/phase_features_v2/
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 artifacts/**
@@ -21,3 +22,14 @@ external/repos/**
 *.tmp
 catboost_info/
 MA_TRAN_THUC_NGHIEM_SKQ_FULL.xlsx
+
+# Kết quả thô và thư mục kiểm tra chỉ lưu local/Drive riêng.
+/results/
+/artifacts_from_kaggle/
+/*_inspect*/
+/tools/
+*.tar.gz
+*.parquet
+predictions.*
+selected_indices.*
+/artifacts/privacy/

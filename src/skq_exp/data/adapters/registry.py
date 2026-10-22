@@ -11,12 +11,17 @@ from pathlib import Path
 
 from .base import DatasetAdapter
 from .course_quality import CourseQualityMEDAdapter
+from .course_quality_v1 import CourseQualityV1Adapter, CourseQualityV1Afelo01Adapter
+from .course_quality_v4 import CourseQualityV4Adapter
 
 
 DATASET_ADAPTERS: dict[str, DatasetAdapter] = {
     adapter.dataset_id: adapter
     for adapter in (
         CourseQualityMEDAdapter(),
+        CourseQualityV1Adapter(),
+        CourseQualityV1Afelo01Adapter(),
+        CourseQualityV4Adapter(),
     )
 }
 

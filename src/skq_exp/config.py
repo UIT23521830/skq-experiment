@@ -51,6 +51,9 @@ class ExperimentConfig:
     resource: dict[str, Any] | None = None
     artifact_policy: dict[str, Any] | None = None
     method_options: dict[str, dict[str, Any]] | None = None
+    class_weight_policy: str = "balanced"
+    learner_params: dict[str, dict[str, Any]] | None = None
+    early_stopping: dict[str, Any] | None = None
 
     @classmethod
     def from_json(cls, path: str | Path) -> "ExperimentConfig":
@@ -121,7 +124,42 @@ class ExperimentConfig:
         valid_learners = {"lr", "rf", "xgb", "cat", "mlp"}
         if set(self.learner_ids) - valid_learners:
             raise ValueError(f"Learner chưa đăng ký: {sorted(set(self.learner_ids) - valid_learners)}")
+        if self.class_weight_policy not in {"natural", "balanced"}:
+            raise ValueError("class_weight_policy chỉ nhận natural hoặc balanced")
+        unknown_param_learners = set(self.learner_params or {}) - valid_learners
+        if unknown_param_learners:
+            raise ValueError(
+                f"learner_params chứa learner chưa đăng ký: {sorted(unknown_param_learners)}"
+            )
+        early_stopping = self.early_stopping or {}
+        if early_stopping:
+            if not isinstance(early_stopping.get("enabled", False), bool):
+                raise ValueError("early_stopping.enabled phải là bool")
+            if int(early_stopping.get("patience", 20)) <= 0:
+                raise ValueError("early_stopping.patience phải dương")
+            if early_stopping.get("enabled", False) and early_stopping.get("source") != "dev":
+                raise ValueError("early stopping chỉ được phép dùng source=dev")
         options = self.method_options or {}
+        pending_candidates = [
+            method_id for method_id in self.method_ids
+            if METHOD_SPECS[method_id].role == "experimental_candidate"
+        ]
+        if pending_candidates:
+            if self.evidence_role != "dev_selection" or not self.test_locked:
+                raise ValueError(
+                    "G00: experimental candidate chỉ được chạy dev_selection khi test_locked=true"
+                )
+            missing_ack = [
+                method_id for method_id in pending_candidates
+                if not bool(options.get(method_id, {}).get(
+                    "pending_approval_acknowledged", False
+                ))
+            ]
+            if missing_ack:
+                raise ValueError(
+                    "G00: experimental candidate cần xác nhận pending_approval_acknowledged: "
+                    f"{missing_ack}"
+                )
         invalid_contracts = {}
         for method_id, method_config in options.items():
             if "allowed_learners" not in method_config:
@@ -169,6 +207,40 @@ class ExperimentConfig:
                 raise ValueError(
                     "confirmatory config phải resolve published_reference và proposed_winner từ freeze"
                 )
+            invalid_panel = {
+                method_id: {
+                    "status": METHOD_SPECS[method_id].status,
+                    "role": METHOD_SPECS[method_id].role,
+                    "evidence_role": METHOD_SPECS[method_id].evidence_role,
+                }
+                for method_id in self.method_ids
+                if (
+                    METHOD_SPECS[method_id].output_kind == "synthetic"
+                    or not METHOD_SPECS[method_id].confirmatory_allowed
+                    or METHOD_SPECS[method_id].evidence_role not in {"confirmatory", "appendix"}
+                )
+            }
+            if invalid_panel:
+                raise ValueError(
+                    "G00: confirmatory config chứa method retired/synthetic/chưa được duyệt: "
+                    f"{invalid_panel}"
+                )
+        if self.evidence_role == "dev_selection":
+            candidates = [
+                method_id for method_id in self.method_ids
+                if METHOD_SPECS[method_id].role == "proposed"
+            ]
+            if len(candidates) > 3:
+                raise ValueError("G00: dev_selection chỉ được có tối đa ba candidate proposed")
+            unapproved = [
+                method_id for method_id in candidates
+                if not METHOD_SPECS[method_id].confirmatory_allowed
+            ]
+            if unapproved:
+                raise ValueError(
+                    "G00: candidate dev_selection chưa được review/registry duyệt: "
+                    f"{unapproved}"
+                )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -193,6 +265,9 @@ class ExperimentConfig:
             "resource": self.resource or {},
             "artifact_policy": self.artifact_policy or {},
             "method_options": self.method_options or {},
+            "class_weight_policy": self.class_weight_policy,
+            "learner_params": self.learner_params or {},
+            "early_stopping": self.early_stopping or {},
             "paths": {
                 "raw_root": str(self.paths.raw_root),
                 "processed_root": str(self.paths.processed_root),

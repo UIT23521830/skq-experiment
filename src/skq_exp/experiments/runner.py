@@ -34,7 +34,13 @@ from ..methods.proposed.allocation import make_group_ids
 from ..methods.proposed.query_losses import make_oof_query_losses
 from ..methods.result import SelectionResult
 from ..methods.synthetic.result import GeneratedDatasetResult
-from ..resources import ResourceGuard, ResourceLimitError, enforce_preflight, estimate_selection_cost
+from ..resources import (
+    ResourceGuard,
+    ResourceLimitError,
+    enforce_preflight,
+    estimate_selection_cost,
+    operation_diagnostics,
+)
 from ..training import (
     evaluate_fitted_learner,
     fit_generated_learner,
@@ -48,6 +54,7 @@ LRQ_METHODS = {
     "p05_skq_lrq_mq",
     "p08_skq_gonzalez_lrq_sq",
     "p09_skq_gonzalez_lrq_mq",
+    "skq_pc_lrq_sq",
 }
 GONZALEZ_PARENT_PREFIX = "gonzalez_pool_"
 
@@ -133,7 +140,8 @@ def run_config(
         structure_cache: dict[tuple[str, int], dict[str, np.ndarray]] = {}
         query_cache: dict[tuple[tuple[str, ...], int], tuple[np.ndarray, dict]] = {}
         for current_method in methods:
-            seeds = [0] if current_method == "c00_full_train" else list(config.selector_seeds)
+            is_full_reference = current_method in {"c00_full_train", "c00_full_train_a"}
+            seeds = [0] if is_full_reference else list(config.selector_seeds)
             for selector_seed in seeds:
                 artifact_identity = _method_artifact_identity(
                     config, current_dataset, current_method, selector_seed, data_fingerprint,
@@ -143,7 +151,7 @@ def run_config(
                     current_dataset, current_method, config.budget_ratio, selector_seed,
                 )
                 result = None
-                if reuse_method_artifacts and current_method != "c00_full_train":
+                if reuse_method_artifacts and not is_full_reference:
                     result = layout.load_method_artifact(
                         method_artifact_dir, expected_identity=artifact_identity,
                     )
@@ -154,11 +162,16 @@ def run_config(
                         freeze_manifest,
                     )
                 if result.status == "success":
-                    _attach_generic_artifact_diagnostics(result, np.asarray(data["y_train"]))
+                    artifact_y = np.asarray(
+                        data["y_fulltrain_a_train"]
+                        if current_method == "c00_full_train_a"
+                        else data["y_train"]
+                    )
+                    _attach_generic_artifact_diagnostics(result, artifact_y)
                 if isinstance(result, SelectionResult) and result.status == "success":
                     selection_cache[(current_method, selector_seed)] = result
                 artifact_ref = None
-                if result.status == "success" and current_method != "c00_full_train":
+                if result.status == "success" and not is_full_reference:
                     try:
                         _enforce_storage(config, layout, reserve_bytes=_result_nbytes(result))
                         artifact_ref = layout.save_method_artifact(
@@ -232,7 +245,7 @@ def run_config(
                         continue
 
                     for _eval_name, manifest, run_dir in pending:
-                        if current_method == "c00_full_train":
+                        if is_full_reference:
                             layout.save_full_reference(run_dir, result, manifest)
                         else:
                             if artifact_ref is None:
@@ -250,26 +263,47 @@ def run_config(
                         max_threads = int(
                             (config.resource or {}).get("max_threads", 4)
                         )
+                        learner_params = (config.learner_params or {}).get(
+                            current_learner,
+                        )
+                        X_dev = np.asarray(data["X_dev"])
+                        y_dev = np.asarray(data["y_dev"])
                         if isinstance(result, GeneratedDatasetResult):
                             fitted = fit_generated_learner(
                                 result,
                                 np.asarray(data["y_train"]),
                                 learner_id=current_learner,
                                 model_seed=config.model_seed,
-                                X_inner_val=None,
-                                y_inner_val=None,
+                                learner_params=learner_params,
+                                X_inner_val=X_dev,
+                                y_inner_val=y_dev,
                                 max_threads=max_threads,
+                                class_weight_policy=config.class_weight_policy,
+                                early_stopping=config.early_stopping,
                             )
                         else:
+                            fit_X = np.asarray(
+                                data["X_fulltrain_a_train"]
+                                if current_method == "c00_full_train_a"
+                                else data["X_train"]
+                            )
+                            fit_y = np.asarray(
+                                data["y_fulltrain_a_train"]
+                                if current_method == "c00_full_train_a"
+                                else data["y_train"]
+                            )
                             fitted = fit_selection_learner(
                                 result,
-                                np.asarray(data["X_train"]),
-                                np.asarray(data["y_train"]),
+                                fit_X,
+                                fit_y,
                                 learner_id=current_learner,
                                 model_seed=config.model_seed,
-                                X_inner_val=None,
-                                y_inner_val=None,
+                                learner_params=learner_params,
+                                X_inner_val=X_dev,
+                                y_inner_val=y_dev,
                                 max_threads=max_threads,
+                                class_weight_policy=config.class_weight_policy,
+                                early_stopping=config.early_stopping,
                             )
                     except MemoryError:
                         _save_evaluation_failures(
@@ -296,6 +330,12 @@ def run_config(
                                 np.asarray(data[f"y_{eval_name}"]),
                                 evaluation_split_count=len(eval_names),
                             )
+                            row_key = f"row_ids_{eval_name}"
+                            family_key = f"course_family_groups_{eval_name}"
+                            if row_key in data:
+                                predictions["row_id"] = np.asarray(data[row_key])
+                            if family_key in data:
+                                predictions["course_family_id"] = np.asarray(data[family_key])
                             phase_policy = dict(config.artifact_policy or {})
                             if eval_index > 0:
                                 phase_policy["save_models"] = False
@@ -367,6 +407,17 @@ def _evaluation_splits(
 ) -> tuple[str, ...]:
     """Chọn split theo stage; temporal CourseQuality bắt buộc đủ bốn phase."""
     if config.stage_id not in {"s2_confirm", "s4_temporal"}:
+        if dataset_id.startswith("course_quality_v1") or dataset_id == "course_quality_v4":
+            dev_phases = tuple(
+                f"dev_phase{phase}"
+                for phase in range(1, 5)
+                if f"X_dev_phase{phase}" in data and f"y_dev_phase{phase}" in data
+            )
+            if len(dev_phases) != 4:
+                raise RuntimeError(
+                    "CQ development phải đánh giá đủ dev P1-P4; test vẫn khóa"
+                )
+            return dev_phases
         return ("dev",)
     phases = tuple(
         f"test_phase{phase}"
@@ -436,11 +487,40 @@ def _produce_or_block(
     query_cache, data_fingerprint, freeze_manifest,
 ):
     y_train = np.asarray(data["y_train"])
-    X_train = np.asarray(data["X_train"])
+    X_learner_train = np.asarray(data["X_train"])
+    X_train = np.asarray(data.get("X_selector_train", X_learner_train))
     requested = max(1, int(round(len(y_train) * config.budget_ratio)))
-    if method_id == "c00_full_train":
-        indices = np.arange(len(y_train), dtype=np.int64)
-        return SelectionResult(indices, np.ones(len(indices)), len(indices), len(indices), "full", method_id)
+    if method_id in {"c00_full_train", "c00_full_train_a"}:
+        reference_y = (
+            np.asarray(data.get("y_fulltrain_a_train", np.empty(0, dtype=y_train.dtype)))
+            if method_id == "c00_full_train_a" else y_train
+        )
+        if method_id == "c00_full_train_a" and not len(reference_y):
+            return SelectionResult.failure(
+                method_id, "blocked", requested,
+                "CQ V4 chưa có FullTrain-A lambda=1 đã qua cohort validation",
+            )
+        indices = np.arange(len(reference_y), dtype=np.int64)
+        return SelectionResult(
+            indices,
+            np.ones(len(indices)),
+            len(indices),
+            len(indices),
+            "full",
+            method_id,
+            diagnostics={
+                "fulltrain_contract": (
+                    "lambda_1_same_v4_train_cohort"
+                    if method_id == "c00_full_train_a" else "pool_b_train"
+                ),
+                "passes_over_train": 0.0,
+                "passes_over_train_kind": "exact_logical",
+                "passes_over_train_definition": (
+                    "FullTrain không chạy selector; lượt đọc khi fit learner được "
+                    "báo trong chi phí huấn luyện, không tính vào selection pass."
+                ),
+            },
+        )
     options = dict((config.method_options or {}).get(method_id, {}))
     lrq_provenance: dict[str, Any] = {}
     if options.get("parent_source") == "@base_winner_structure":
@@ -460,7 +540,7 @@ def _produce_or_block(
         options["source_method"] = frozen_roles["proposed_winner"]
     if method_id in LRQ_METHODS:
         gate_reason, lrq_provenance = _validate_lrq_gate(
-            config, options, freeze_manifest
+            config, options, freeze_manifest, method_id=method_id
         )
         if gate_reason is not None:
             return SelectionResult.failure(
@@ -494,8 +574,23 @@ def _produce_or_block(
             else None
         ),
     )
+    resource_policy = config.resource or {}
+    resource_diagnostics = {
+        "estimated_working_bytes": int(estimate.working_bytes),
+        **operation_diagnostics(estimate, resource_policy),
+        "selector_view": (
+            "dedicated"
+            if "X_selector_train" in data
+            else "shared_legacy"
+        ),
+        "selector_feature_count": int(X_train.shape[1]),
+        "learner_feature_count": int(X_learner_train.shape[1]),
+        "feature_contract_hash": (
+            (data.get("feature_contract") or {}).get("contract_hash")
+        ),
+    }
     try:
-        enforce_preflight(estimate, config.resource)
+        enforce_preflight(estimate, resource_policy)
     except ResourceLimitError as error:
         failure = _failure_for_kind(
             spec.output_kind, method_id, error.status, requested, str(error)
@@ -506,17 +601,27 @@ def _produce_or_block(
             "resource_status": error.status,
             "estimated_working_bytes": int(estimate.working_bytes),
             "estimated_operations": float(estimate.estimated_operations),
-            "configured_max_ram_gb": float(config.resource.get("max_ram_gb", 8.0)),
+            "configured_max_ram_gb": float(resource_policy.get("max_ram_gb", 8.0)),
             "configured_max_estimated_operations": float(
-                config.resource.get("max_estimated_operations", 50_000_000_000)
+                resource_policy.get("max_estimated_operations", 50_000_000_000)
             ),
         })
         return failure
-    guard = ResourceGuard(config.resource)
+    guard = ResourceGuard(resource_policy)
     if spec.output_kind == "synthetic":
         try:
             generator = build_generator(method_id, seed, external_root=config.paths.external_root, options=options)
-            return generator.generate(X_train, y_train, config.budget_ratio, resource_guard=guard)
+            generated = generator.generate(
+                X_train, y_train, config.budget_ratio, resource_guard=guard,
+            )
+            generated.diagnostics.update(resource_diagnostics)
+            return generated
+        except ResourceLimitError as error:
+            failure = GeneratedDatasetResult.failure(
+                method_id, error.status, requested, str(error),
+            )
+            failure.diagnostics.update(resource_diagnostics)
+            return failure
         except Exception as error:
             return GeneratedDatasetResult.failure(method_id, "failed", requested, repr(error))
     if method_id == "d05_equal_group_weight":
@@ -533,7 +638,9 @@ def _produce_or_block(
         if isinstance(parent_result, str):
             return SelectionResult.failure(method_id, "blocked", requested, parent_result)
         group_ids = make_group_ids(parent_result.get("parent_ids"), y_train)
-        return equal_group_weights(base, group_ids)
+        result = equal_group_weights(base, group_ids)
+        result.diagnostics.update(resource_diagnostics)
+        return result
     try:
         selector = build_selector(
             method_id, seed, external_root=config.paths.external_root,
@@ -546,6 +653,8 @@ def _produce_or_block(
         "resource_guard": guard,
         "resource_policy": config.resource,
     }
+    if "phase_train" in data:
+        kwargs["phases"] = np.asarray(data["phase_train"])
     structure = None
     if spec.needs_parent:
         parent_source = str(options.get("parent_source", ""))
@@ -587,10 +696,11 @@ def _produce_or_block(
             try:
                 query_started = time.perf_counter()
                 query_values, query_metadata = make_oof_query_losses(
-                    X_train, y_train, query_ids, seed=seed,
+                    X_learner_train, y_train, query_ids, seed=seed,
                     folds=int(options.get("oof_folds", 5)),
                     max_threads=int((config.resource or {}).get("max_threads", 4)),
                 )
+                query_metadata["feature_view"] = "learner_view_with_qd3_static_codes"
                 query_metadata["seconds"] = time.perf_counter() - query_started
                 query_cache[cache_key] = (query_values, query_metadata)
             except Exception as error:
@@ -604,7 +714,10 @@ def _produce_or_block(
     try:
         result = selector.select(X_train, y_train, config.budget_ratio, **kwargs)
     except ResourceLimitError as error:
-        return SelectionResult.failure(method_id, error.status, requested, str(error))
+        failure = SelectionResult.failure(method_id, error.status, requested, str(error))
+        failure.diagnostics.update(resource_diagnostics)
+        return failure
+    result.diagnostics.update(resource_diagnostics)
     if result.status == "success" and spec.needs_parent:
         own_total = float(result.timings.get("total", 0.0))
         parent_total = float(np.asarray(structure.get("_producer_total_seconds", 0.0)).item())
@@ -784,9 +897,35 @@ def _nearest_gonzalez_center_ids(
     return assignments
 
 
-def _validate_lrq_gate(config, options, freeze_manifest):
+def _validate_lrq_gate(config, options, freeze_manifest, method_id: str | None = None):
     """Cho phép dev screen có kiểm soát, nhưng không hạ gate confirmatory/test."""
     parent_source = str(options.get("parent_source", ""))
+    if method_id == "skq_pc_lrq_sq":
+        if config.stage_id == "s1_screen":
+            if not config.test_locked:
+                return "SKQ-PC + LRQ-SQ dev screen yêu cầu test_locked=true", {}
+            return None, {
+                "selection_phase": "pre_freeze_dev_screen",
+                "parent_frozen": False,
+                "confirmatory_eligible": False,
+                "evaluation_split": "dev",
+                "query_contract": "OOF-LR train-only",
+            }
+        if freeze_manifest is None:
+            return "SKQ-PC + LRQ-SQ ngoài dev screen chỉ mở sau freeze", {}
+        selected = (
+            freeze_manifest.get("selected_candidate")
+            or (freeze_manifest.get("method_roles") or {}).get("proposed_winner")
+        )
+        if selected != method_id:
+            return "SKQ-PC + LRQ-SQ chưa phải proposed winner trong freeze", {}
+        return None, {
+            "selection_phase": "post_freeze_confirmatory",
+            "parent_frozen": True,
+            "confirmatory_eligible": True,
+            "evaluation_split": "test" if config.stage_id == "s2_confirm" else "dev",
+            "query_contract": "OOF-LR train-only",
+        }
     if config.stage_id == "s1_screen":
         if not config.test_locked:
             return "LRQ dev screen yêu cầu test_locked=true", {}
@@ -951,8 +1090,19 @@ def _load_freeze_manifest(
         manifest = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as error:
         raise RuntimeError(f"Freeze manifest không đọc được: {error!r}") from error
-    if manifest.get("schema_version") != 3:
-        raise RuntimeError("Freeze manifest phải dùng schema_version=3")
+    schema_version = manifest.get("schema_version")
+    if config.evidence_role == "confirmatory":
+        from .freeze import validate_freeze_manifest_v4
+
+        validate_freeze_manifest_v4(manifest, config)
+        return manifest
+    if schema_version not in {3, 4}:
+        raise RuntimeError("Freeze manifest historical chỉ hỗ trợ schema_version 3 hoặc 4")
+    if schema_version == 4:
+        from .freeze import validate_freeze_manifest_v4
+
+        validate_freeze_manifest_v4(manifest, config)
+        return manifest
     required_fields = {"config_hash", "code_commit", "dataset_fingerprints"}
     missing = required_fields - set(manifest)
     if missing:
@@ -1093,6 +1243,12 @@ def _save_evaluation(
             if probability_dtype not in {"float16", "float32", "float64"}:
                 raise ValueError("artifact_policy.probability_dtype không hợp lệ")
             payload["y_prob"] = np.asarray(predictions["y_prob"], dtype=probability_dtype)
+        for metadata_name in ("row_id", "course_family_id"):
+            if metadata_name in predictions:
+                metadata = np.asarray(predictions[metadata_name])
+                if len(metadata) != len(payload["y_pred"]):
+                    raise ValueError(f"{metadata_name} không thẳng hàng với prediction")
+                payload[metadata_name] = metadata
         estimated_bytes = int(sum(value.nbytes for value in payload.values()))
         per_run_limit = int(float(policy.get("max_prediction_mb_per_run", 64)) * 1024 ** 2)
         if estimated_bytes > per_run_limit:
@@ -1165,6 +1321,12 @@ def _attach_generic_artifact_diagnostics(result: Any, y_train: np.ndarray) -> No
     result.diagnostics.setdefault("realized_rows", realized)
     result.diagnostics.setdefault("realized_fraction", realized / n_train if n_train else None)
     result.diagnostics.setdefault("compression_ratio", n_train / realized if realized else None)
+    result.diagnostics.setdefault("passes_over_train", None)
+    result.diagnostics.setdefault("passes_over_train_kind", "unknown")
+    result.diagnostics.setdefault(
+        "passes_over_train_definition",
+        "Adapter chưa khai báo số lượt logic qua toàn bộ train; không được suy từ estimated operations.",
+    )
     weights = np.asarray(result.weights, dtype=np.float64)
     if len(weights):
         denominator = float(len(weights) * np.sum(weights ** 2))

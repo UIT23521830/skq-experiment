@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "purpose": "Machine-readable request for M0 evidence that cannot be reconstructed from model-ready Pool B",
+  "test_metrics_allowed": false,
+  "group_unit_confirmation": {
+    "relative_path": null,
+    "required_json_fields": ["course_id_equals_course_root_id", "confirmed_by", "confirmed_at", "scope"],
+    "pass_value": {"course_id_equals_course_root_id": true}
+  },
+  "fulltrain_a": {
+    "relative_path": null,
+    "format": "parquet",
+    "required_columns": ["user_id", "course_id", "y_alpha_1"],
+    "required_manifest_fields": ["feature_semantics", "full_behavior_definition", "train_course_split_hash"],
+    "note": "P4 at 90 percent progress is not accepted as FullTrain-A without reviewer confirmation"
+  },
+  "D03_pre_imputation": {
+    "relative_path": null,
+    "format": "parquet",
+    "required_columns": ["user_id", "course_id", "phase", "y_alpha_1"],
+    "required_manifest_fields": ["feature_columns_before_imputation", "missing_value_encoding"],
+    "note": "Missing masks are audit inputs and must not be appended to learner features"
+  },
+  "D06_raw_events": {
+    "relative_path": null,
+    "format": "parquet",
+    "required_columns": ["user_id", "course_id", "event_timestamp"],
+    "required_manifest_fields": ["timezone", "phase_cutoff_definition", "event_timestamp_column"],
+    "minimum_manual_pairs": 20
+  }
+}

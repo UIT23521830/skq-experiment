@@ -8,17 +8,23 @@ test để early stopping hay tuning.
 from __future__ import annotations
 
 import time
+import warnings
 from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
 import psutil
+from sklearn.exceptions import ConvergenceWarning
 
 from ..methods.result import SelectionResult
 from ..methods.synthetic.result import GeneratedDatasetResult
 from .learners import build_learner
 from .metrics import compute_all_metrics
-from .weights import balanced_class_weights, effective_sample_weights
+from .weights import (
+    balanced_class_weights,
+    effective_sample_weights,
+    sample_weight_diagnostics,
+)
 
 
 @dataclass
@@ -39,12 +45,14 @@ def fit_selection_learner(
     X_inner_val: np.ndarray | None = None,
     y_inner_val: np.ndarray | None = None,
     max_threads: int = 4,
+    class_weight_policy: str = "balanced",
+    early_stopping: dict[str, Any] | None = None,
 ) -> FittedLearner:
     if selection.status != "success":
         raise RuntimeError(f"Không thể train từ selection status={selection.status}")
     selected_X = X_train[selection.indices]
     selected_y = y_train[selection.indices]
-    class_weights = balanced_class_weights(y_train)
+    class_weights = _class_weights(y_train, class_weight_policy)
     sample_weight = effective_sample_weights(
         selected_y, selection.weights, class_weights,
     )
@@ -68,6 +76,12 @@ def fit_selection_learner(
         full_train_rows=len(y_train),
         selection_breakdown=selection.timings,
         passes_over_train=selection.diagnostics.get("passes_over_train"),
+        sample_weight_summary=sample_weight_diagnostics(sample_weight),
+        effective_class_prior=_weighted_class_prior(
+            selected_y, sample_weight, np.unique(y_train),
+        ),
+        class_weight_policy=class_weight_policy,
+        early_stopping=early_stopping,
     )
 
 
@@ -81,12 +95,14 @@ def fit_generated_learner(
     X_inner_val: np.ndarray | None = None,
     y_inner_val: np.ndarray | None = None,
     max_threads: int = 4,
+    class_weight_policy: str = "balanced",
+    early_stopping: dict[str, Any] | None = None,
 ) -> FittedLearner:
     """Fit learner trên synthetic table với class-weight từ full train."""
     if generated.status != "success":
         raise RuntimeError(f"Không thể train từ generated status={generated.status}")
     y_full_train = np.asarray(y_full_train)
-    class_weights = balanced_class_weights(y_full_train)
+    class_weights = _class_weights(y_full_train, class_weight_policy)
     sample_weight = effective_sample_weights(
         generated.y, generated.weights, class_weights,
     )
@@ -108,6 +124,12 @@ def fit_generated_learner(
         full_train_rows=len(y_full_train),
         selection_breakdown=generated.timings,
         passes_over_train=generated.diagnostics.get("passes_over_train"),
+        sample_weight_summary=sample_weight_diagnostics(sample_weight),
+        effective_class_prior=_weighted_class_prior(
+            generated.y, sample_weight, np.unique(y_full_train),
+        ),
+        class_weight_policy=class_weight_policy,
+        early_stopping=early_stopping,
     )
 
 
@@ -135,6 +157,9 @@ def evaluate_fitted_learner(
     cpu_after = sum(process.cpu_times()[:2])
     rss_after = process.memory_info().rss
     io_after = _io_bytes(process)
+    peak_vram_bytes = _peak_vram_bytes()
+    if peak_vram_bytes is not None and peak_vram_bytes <= 0:
+        peak_vram_bytes = None
 
     cost = dict(fitted.base_cost)
     fit_io = cost.pop("io_bytes_fit", None)
@@ -154,10 +179,17 @@ def evaluate_fitted_learner(
         "io_bytes_fit_predict": (
             None if fit_io is None or predict_io is None else fit_io + predict_io
         ),
-        "peak_vram_bytes": _peak_vram_bytes(),
+        "peak_vram_bytes": peak_vram_bytes,
+        "peak_vram_measurement": (
+            "torch_cuda_allocator" if peak_vram_bytes is not None else "not_measured"
+        ),
         "evaluation_split_count": int(evaluation_split_count),
         "fit_shared_across_evaluation_splits": evaluation_split_count > 1,
         "fit_cost_allocation": "shared_not_additive",
+        "selection_shared_across_evaluation_splits": evaluation_split_count > 1,
+        "selection_cost_allocation": "shared_not_additive",
+        "shared_selection_fit_seconds": selection_seconds + cost["fit_seconds"],
+        "incremental_evaluation_seconds": predict_time,
     })
     cost.pop("rss_before_fit_bytes", None)
     metrics = compute_all_metrics(
@@ -191,13 +223,36 @@ def _fit_learner(
     full_train_rows: int,
     selection_breakdown: dict[str, Any],
     passes_over_train: Any,
+    sample_weight_summary: dict[str, float | int],
+    effective_class_prior: dict[str, Any],
+    class_weight_policy: str,
+    early_stopping: dict[str, Any] | None,
 ) -> FittedLearner:
+    if (X_inner_val is None) != (y_inner_val is None):
+        raise ValueError("X_inner_val và y_inner_val phải cùng có hoặc cùng không")
+    has_dev = X_inner_val is not None
+    early_policy = dict(early_stopping or {})
+    early_enabled = bool(early_policy.get("enabled", False))
+    patience = int(early_policy.get("patience", 20))
+    supports_early_stopping = learner_id in {"xgb", "cat", "mlp"}
+    if early_enabled and early_policy.get("source") != "dev":
+        raise ValueError("early stopping chỉ được dùng source=dev")
+    if early_enabled and supports_early_stopping and not has_dev:
+        raise ValueError(f"{learner_id} bật early stopping nhưng thiếu dev split")
+    resolved_params = dict(learner_params or {})
+    if early_enabled and has_dev:
+        if learner_id == "xgb":
+            resolved_params.setdefault("early_stopping_rounds", patience)
+        elif learner_id == "cat":
+            resolved_params.setdefault("use_best_model", True)
+        elif learner_id == "mlp":
+            resolved_params.setdefault("patience", patience)
     learner = build_learner(
         learner_id,
         seed=model_seed,
         input_dim=input_dim,
         n_classes=len(labels),
-        params=learner_params,
+        params=resolved_params,
         max_threads=max_threads,
     )
     process = psutil.Process()
@@ -205,11 +260,41 @@ def _fit_learner(
     rss_before = process.memory_info().rss
     io_before = _io_bytes(process)
     fit_started = time.perf_counter()
-    if learner_id == "mlp":
-        eval_set = None if X_inner_val is None else (X_inner_val, y_inner_val)
-        learner.fit(X_fit, y_fit, sample_weight=sample_weight, eval_set=eval_set)
-    else:
-        learner.fit(X_fit, y_fit, sample_weight=sample_weight)
+    with warnings.catch_warnings(record=True) as caught_warnings:
+        warnings.simplefilter("always")
+        if early_enabled and has_dev and learner_id == "xgb":
+            learner.fit(
+                X_fit,
+                y_fit,
+                sample_weight=sample_weight,
+                eval_set=[(X_inner_val, y_inner_val)],
+                verbose=False,
+            )
+        elif early_enabled and has_dev and learner_id == "cat":
+            learner.fit(
+                X_fit,
+                y_fit,
+                sample_weight=sample_weight,
+                eval_set=(X_inner_val, y_inner_val),
+                early_stopping_rounds=patience,
+                verbose=False,
+            )
+        elif learner_id == "mlp":
+            eval_set = (
+                (X_inner_val, y_inner_val)
+                if early_enabled and has_dev
+                else None
+            )
+            learner.fit(X_fit, y_fit, sample_weight=sample_weight, eval_set=eval_set)
+        else:
+            learner.fit(X_fit, y_fit, sample_weight=sample_weight)
+    convergence_warnings = [
+        str(item.message) for item in caught_warnings
+        if issubclass(item.category, ConvergenceWarning)
+    ]
+    for item in caught_warnings:
+        if not issubclass(item.category, ConvergenceWarning):
+            warnings.warn(str(item.message), item.category, stacklevel=2)
     fit_time = time.perf_counter() - fit_started
     cpu_after = sum(process.cpu_times()[:2])
     rss_after = process.memory_info().rss
@@ -229,8 +314,67 @@ def _fit_learner(
         "compression_ratio": float(realized_rows / full_train_rows),
         "selection_breakdown_seconds": selection_breakdown,
         "passes_over_train": passes_over_train,
+        "effective_sample_weight": sample_weight_summary,
+        "effective_class_prior": effective_class_prior,
+        "class_weight_policy": class_weight_policy,
+        "early_stopping_enabled": bool(early_enabled and supports_early_stopping),
+        "early_stopping_source": "dev" if early_enabled and supports_early_stopping else None,
+        "early_stopping_patience": patience if early_enabled and supports_early_stopping else None,
+        "best_iteration": _best_iteration(learner),
+        "fit_converged": (
+            not convergence_warnings if learner_id == "lr" else None
+        ),
+        "optimizer_iterations": _optimizer_iterations(learner),
+        "convergence_warnings": convergence_warnings,
     }
     return FittedLearner(model=learner, labels=labels, base_cost=base_cost)
+
+
+def _class_weights(
+    y_full_train: np.ndarray,
+    policy: str,
+) -> dict[int, float] | None:
+    if policy == "natural":
+        return None
+    if policy == "balanced":
+        return balanced_class_weights(y_full_train)
+    raise ValueError("class_weight_policy chỉ nhận natural hoặc balanced")
+
+
+def _weighted_class_prior(
+    y: np.ndarray,
+    weights: np.ndarray,
+    labels: np.ndarray,
+) -> dict[str, Any]:
+    """Lưu prior learner thật sự thấy, căn theo labels để A8 tái lập được."""
+    y = np.asarray(y)
+    weights = np.asarray(weights, dtype=np.float64)
+    labels = np.asarray(labels)
+    if y.shape != weights.shape or weights.sum() <= 0:
+        raise ValueError("Không thể tính effective class prior")
+    probabilities = [float(weights[y == label].sum() / weights.sum()) for label in labels]
+    return {
+        "labels": [
+            int(label) if isinstance(label, (int, np.integer)) else str(label)
+            for label in labels
+        ],
+        "probabilities": probabilities,
+    }
+
+
+def _best_iteration(learner: Any) -> int | None:
+    for attribute in ("best_iteration", "best_iteration_"):
+        value = getattr(learner, attribute, None)
+        if value is not None:
+            return int(value)
+    return None
+
+
+def _optimizer_iterations(learner: Any) -> list[int] | None:
+    value = getattr(learner, "n_iter_", None)
+    if value is None:
+        return None
+    return [int(item) for item in np.asarray(value).reshape(-1)]
 
 
 def _io_bytes(process: psutil.Process) -> int | None:
