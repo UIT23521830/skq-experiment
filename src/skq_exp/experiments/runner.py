@@ -140,7 +140,8 @@ def run_config(
         structure_cache: dict[tuple[str, int], dict[str, np.ndarray]] = {}
         query_cache: dict[tuple[tuple[str, ...], int], tuple[np.ndarray, dict]] = {}
         for current_method in methods:
-            seeds = [0] if current_method == "c00_full_train" else list(config.selector_seeds)
+            is_full_reference = current_method in {"c00_full_train", "c00_full_train_a"}
+            seeds = [0] if is_full_reference else list(config.selector_seeds)
             for selector_seed in seeds:
                 artifact_identity = _method_artifact_identity(
                     config, current_dataset, current_method, selector_seed, data_fingerprint,
@@ -150,7 +151,7 @@ def run_config(
                     current_dataset, current_method, config.budget_ratio, selector_seed,
                 )
                 result = None
-                if reuse_method_artifacts and current_method != "c00_full_train":
+                if reuse_method_artifacts and not is_full_reference:
                     result = layout.load_method_artifact(
                         method_artifact_dir, expected_identity=artifact_identity,
                     )
@@ -161,11 +162,16 @@ def run_config(
                         freeze_manifest,
                     )
                 if result.status == "success":
-                    _attach_generic_artifact_diagnostics(result, np.asarray(data["y_train"]))
+                    artifact_y = np.asarray(
+                        data["y_fulltrain_a_train"]
+                        if current_method == "c00_full_train_a"
+                        else data["y_train"]
+                    )
+                    _attach_generic_artifact_diagnostics(result, artifact_y)
                 if isinstance(result, SelectionResult) and result.status == "success":
                     selection_cache[(current_method, selector_seed)] = result
                 artifact_ref = None
-                if result.status == "success" and current_method != "c00_full_train":
+                if result.status == "success" and not is_full_reference:
                     try:
                         _enforce_storage(config, layout, reserve_bytes=_result_nbytes(result))
                         artifact_ref = layout.save_method_artifact(
@@ -239,7 +245,7 @@ def run_config(
                         continue
 
                     for _eval_name, manifest, run_dir in pending:
-                        if current_method == "c00_full_train":
+                        if is_full_reference:
                             layout.save_full_reference(run_dir, result, manifest)
                         else:
                             if artifact_ref is None:
@@ -276,10 +282,20 @@ def run_config(
                                 early_stopping=config.early_stopping,
                             )
                         else:
+                            fit_X = np.asarray(
+                                data["X_fulltrain_a_train"]
+                                if current_method == "c00_full_train_a"
+                                else data["X_train"]
+                            )
+                            fit_y = np.asarray(
+                                data["y_fulltrain_a_train"]
+                                if current_method == "c00_full_train_a"
+                                else data["y_train"]
+                            )
                             fitted = fit_selection_learner(
                                 result,
-                                np.asarray(data["X_train"]),
-                                np.asarray(data["y_train"]),
+                                fit_X,
+                                fit_y,
                                 learner_id=current_learner,
                                 model_seed=config.model_seed,
                                 learner_params=learner_params,
@@ -314,6 +330,12 @@ def run_config(
                                 np.asarray(data[f"y_{eval_name}"]),
                                 evaluation_split_count=len(eval_names),
                             )
+                            row_key = f"row_ids_{eval_name}"
+                            family_key = f"course_family_groups_{eval_name}"
+                            if row_key in data:
+                                predictions["row_id"] = np.asarray(data[row_key])
+                            if family_key in data:
+                                predictions["course_family_id"] = np.asarray(data[family_key])
                             phase_policy = dict(config.artifact_policy or {})
                             if eval_index > 0:
                                 phase_policy["save_models"] = False
@@ -385,7 +407,7 @@ def _evaluation_splits(
 ) -> tuple[str, ...]:
     """Chọn split theo stage; temporal CourseQuality bắt buộc đủ bốn phase."""
     if config.stage_id not in {"s2_confirm", "s4_temporal"}:
-        if dataset_id.startswith("course_quality_v1"):
+        if dataset_id.startswith("course_quality_v1") or dataset_id == "course_quality_v4":
             dev_phases = tuple(
                 f"dev_phase{phase}"
                 for phase in range(1, 5)
@@ -393,7 +415,7 @@ def _evaluation_splits(
             )
             if len(dev_phases) != 4:
                 raise RuntimeError(
-                    "CQ v1 development phải đánh giá đủ dev P1-P4; test vẫn khóa"
+                    "CQ development phải đánh giá đủ dev P1-P4; test vẫn khóa"
                 )
             return dev_phases
         return ("dev",)
@@ -468,8 +490,17 @@ def _produce_or_block(
     X_learner_train = np.asarray(data["X_train"])
     X_train = np.asarray(data.get("X_selector_train", X_learner_train))
     requested = max(1, int(round(len(y_train) * config.budget_ratio)))
-    if method_id == "c00_full_train":
-        indices = np.arange(len(y_train), dtype=np.int64)
+    if method_id in {"c00_full_train", "c00_full_train_a"}:
+        reference_y = (
+            np.asarray(data.get("y_fulltrain_a_train", np.empty(0, dtype=y_train.dtype)))
+            if method_id == "c00_full_train_a" else y_train
+        )
+        if method_id == "c00_full_train_a" and not len(reference_y):
+            return SelectionResult.failure(
+                method_id, "blocked", requested,
+                "CQ V4 chưa có FullTrain-A lambda=1 đã qua cohort validation",
+            )
+        indices = np.arange(len(reference_y), dtype=np.int64)
         return SelectionResult(
             indices,
             np.ones(len(indices)),
@@ -478,6 +509,10 @@ def _produce_or_block(
             "full",
             method_id,
             diagnostics={
+                "fulltrain_contract": (
+                    "lambda_1_same_v4_train_cohort"
+                    if method_id == "c00_full_train_a" else "pool_b_train"
+                ),
                 "passes_over_train": 0.0,
                 "passes_over_train_kind": "exact_logical",
                 "passes_over_train_definition": (
@@ -1208,6 +1243,12 @@ def _save_evaluation(
             if probability_dtype not in {"float16", "float32", "float64"}:
                 raise ValueError("artifact_policy.probability_dtype không hợp lệ")
             payload["y_prob"] = np.asarray(predictions["y_prob"], dtype=probability_dtype)
+        for metadata_name in ("row_id", "course_family_id"):
+            if metadata_name in predictions:
+                metadata = np.asarray(predictions[metadata_name])
+                if len(metadata) != len(payload["y_pred"]):
+                    raise ValueError(f"{metadata_name} không thẳng hàng với prediction")
+                payload[metadata_name] = metadata
         estimated_bytes = int(sum(value.nbytes for value in payload.values()))
         per_run_limit = int(float(policy.get("max_prediction_mb_per_run", 64)) * 1024 ** 2)
         if estimated_bytes > per_run_limit:

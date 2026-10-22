@@ -62,6 +62,21 @@ def test_course_quality_temporal_requires_four_splits():
         _evaluation_splits(config, "course_quality_med_v1", data)
 
 
+def test_cq_v4_development_uses_all_four_dev_phases_and_never_test() -> None:
+    config = SimpleNamespace(stage_id="s1_screen")
+    data = {
+        f"{prefix}_dev_phase{phase}": np.zeros(2)
+        for phase in range(1, 5)
+        for prefix in ("X", "y")
+    }
+    assert _evaluation_splits(config, "course_quality_v4", data) == (
+        "dev_phase1", "dev_phase2", "dev_phase3", "dev_phase4",
+    )
+    data.pop("y_dev_phase2")
+    with pytest.raises(RuntimeError, match="đủ dev P1-P4"):
+        _evaluation_splits(config, "course_quality_v4", data)
+
+
 def test_one_fitted_model_is_reused_for_four_temporal_splits(monkeypatch):
     learner = _CountingLearner()
     monkeypatch.setattr(

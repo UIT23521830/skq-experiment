@@ -72,6 +72,12 @@ DATASET_SPECS = {
             178_598, 56, 3,
             "provided_course_random_disjoint_train_dev_test_pool_b_four_phases_test_locked_sensitivity",
         ),
+        DatasetSpec(
+            "course_quality_v4", "CourseQuality family-temporal V4", "Private group snapshot",
+            "private://course_quality_v4/family_temporal_dev_only",
+            0, 56, 3,
+            "course_family_latest20_test_train70_dev10_seed42_test_locked",
+        ),
     ]
 }
 

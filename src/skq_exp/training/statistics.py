@@ -37,6 +37,7 @@ def paired_course_bootstrap_ul(
     seed: int = 20261012,
     alpha: float = 0.05,
     non_inferiority_margin: float = 0.0,
+    resampling_unit: str = "course_root_id",
 ) -> dict[str, Any]:
     """Bootstrap Delta_UL=MacroF1(A)-MacroF1(B), dương có lợi cho A."""
     if not units:
@@ -69,6 +70,7 @@ def paired_course_bootstrap_ul(
         margin=non_inferiority_margin,
         effect_name="delta_ul_a_minus_b",
         unit_ids=[unit.unit_id for unit in units],
+        resampling_unit=resampling_unit,
     )
 
 
@@ -79,6 +81,7 @@ def paired_course_bootstrap_ec(
     seed: int = 20261012,
     alpha: float = 0.05,
     non_inferiority_margin: float = 0.0,
+    resampling_unit: str = "course_root_id",
 ) -> dict[str, Any]:
     """Bootstrap Delta_EC=MAE(B)-MAE(A), dương có lợi cho A."""
     if not units:
@@ -116,6 +119,7 @@ def paired_course_bootstrap_ec(
         margin=non_inferiority_margin,
         effect_name="delta_ec_b_minus_a",
         unit_ids=[unit.unit_id for unit in units],
+        resampling_unit=resampling_unit,
     )
 
 
@@ -158,9 +162,12 @@ def _bootstrap_result(
     margin: float,
     effect_name: str,
     unit_ids: list[str],
+    resampling_unit: str,
 ) -> dict[str, Any]:
     if n_courses < 2 or n_boot <= 0 or not 0 < alpha < 1 or margin < 0:
         raise ValueError("Bootstrap cần >=2 course, n_boot>0, alpha trong (0,1), margin>=0")
+    if resampling_unit not in {"course_root_id", "course_family_id"}:
+        raise ValueError("resampling_unit phải là course_root_id hoặc course_family_id")
     point = effect(np.ones(n_courses, dtype=np.int64))
     rng = np.random.default_rng(seed)
     bootstrap = np.empty(n_boot, dtype=float)
@@ -185,7 +192,7 @@ def _bootstrap_result(
         "alpha": float(alpha),
         "n_boot": int(n_boot),
         "bootstrap_seed": int(seed),
-        "resampling_unit": "course_root_id",
+        "resampling_unit": resampling_unit,
         "course_count": int(n_courses),
         "unit_ids": unit_ids,
     }

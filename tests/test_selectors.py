@@ -11,6 +11,7 @@ from skq_exp.methods.controls import (
     PhaseClassStratifiedRandomSelector,
     StratifiedRandomSelector,
     UniformRandomSelector,
+    allocate_stratum_quotas,
 )
 from skq_exp.methods.proposed.structured_kquad import StructuredKQuadSelector
 from skq_exp.methods.proposed.herding import kernel_herding
@@ -49,6 +50,26 @@ def test_c03_preserves_phase_class_mass_and_blocks_without_phase() -> None:
     )
     assert blocked.status == "blocked"
     assert "không fallback" in blocked.diagnostics["reason"]
+
+
+def test_sqrt_floor_allocation_is_exact_bounded_and_shared_by_c03() -> None:
+    capacities = np.asarray([100, 25, 9, 4], dtype=np.int64)
+    quotas = allocate_stratum_quotas(
+        capacities, 40, policy="sqrt_floor", floor=2,
+    )
+    assert int(quotas.sum()) == 40
+    assert np.all(quotas >= np.minimum(capacities, 2))
+    assert np.all(quotas <= capacities)
+    # Căn bậc hai làm quota/capacity của tầng hiếm lớn hơn tầng phổ biến.
+    assert quotas[-1] / capacities[-1] > quotas[0] / capacities[0]
+
+    data = make_toy_data()
+    phases = np.resize(np.arange(4), len(data["y_train"]))
+    result = PhaseClassStratifiedRandomSelector(
+        11, allocation_policy="sqrt_floor", allocation_floor=1,
+    ).select(data["X_train"], data["y_train"], 0.10, phases=phases)
+    assert result.status == "success"
+    assert result.diagnostics["allocation_policy"] == "sqrt_floor"
 
 
 def test_structured_kquad_preserves_budget_and_mass() -> None:

@@ -50,6 +50,80 @@ def allocate_largest_remainder(capacities: np.ndarray, total: int, ensure_one: b
     return allocation
 
 
+def allocate_stratum_quotas(
+    capacities: np.ndarray,
+    total: int,
+    *,
+    policy: str = "proportional",
+    floor: int = 20,
+) -> np.ndarray:
+    """Phân bổ exact budget theo hợp đồng QĐ20 của Review 22/10/2026.
+
+    ``proportional`` giữ đối chứng legacy bằng largest remainder. ``sqrt_floor``
+    dùng mục tiêu ``m_g ∝ sqrt(|P_g|)`` với cận dưới
+    ``min(floor, |P_g|)`` và cận trên là capacity. Nếu tổng cận dưới lớn hơn
+    budget thì trả lỗi thay vì âm thầm hạ floor, vì đó là một cấu hình khoa học
+    khác với cấu hình đã đăng ký.
+    """
+
+    capacities = np.asarray(capacities, dtype=np.int64)
+    if capacities.ndim != 1 or np.any(capacities < 0):
+        raise ValueError("capacities phải là vector số nguyên không âm")
+    if total < 0 or total > int(capacities.sum()):
+        raise BudgetInfeasibleError("Budget nằm ngoài tổng capacity")
+    if policy == "proportional":
+        return allocate_largest_remainder(capacities, total, ensure_one=True)
+    if policy != "sqrt_floor":
+        raise ValueError(f"allocation policy không hợp lệ: {policy}")
+    if floor <= 0:
+        raise ValueError("allocation floor phải dương")
+
+    lower = np.minimum(capacities, int(floor))
+    if int(lower.sum()) > total:
+        raise BudgetInfeasibleError(
+            "Budget nhỏ hơn tổng floor phase×class của chính sách sqrt_floor"
+        )
+    if total == int(capacities.sum()):
+        return capacities.copy()
+    if total == int(lower.sum()):
+        return lower.copy()
+
+    weights = np.sqrt(capacities.astype(np.float64))
+    low = 0.0
+    high = max(
+        (float(capacity) / weight for capacity, weight in zip(capacities, weights) if weight > 0),
+        default=0.0,
+    )
+    for _ in range(100):
+        scale = (low + high) / 2.0
+        target = np.clip(scale * weights, lower, capacities)
+        if float(target.sum()) < total:
+            low = scale
+        else:
+            high = scale
+    target = np.clip(high * weights, lower, capacities)
+    allocation = np.floor(target + 1e-12).astype(np.int64)
+    allocation = np.maximum(allocation, lower)
+    allocation = np.minimum(allocation, capacities)
+    left = total - int(allocation.sum())
+    remainders = target - allocation
+    order = np.lexsort((np.arange(len(capacities)), -remainders))
+    while left > 0:
+        progressed = False
+        for index in order:
+            if allocation[index] < capacities[index]:
+                allocation[index] += 1
+                left -= 1
+                progressed = True
+                if left == 0:
+                    break
+        if not progressed:
+            raise BudgetInfeasibleError("Không thể phân bổ exact sqrt-floor budget")
+    if int(allocation.sum()) != total:
+        raise RuntimeError("sqrt-floor allocator không bảo toàn exact budget")
+    return allocation
+
+
 class StratifiedRandomSelector(BaseSelector):
     method_id = "c02_stratified_random"
 
@@ -127,6 +201,17 @@ class PhaseClassStratifiedRandomSelector(BaseSelector):
 
     method_id = "c03_phase_class_random"
 
+    def __init__(
+        self,
+        seed: int = 11,
+        *,
+        allocation_policy: str = "proportional",
+        allocation_floor: int = 20,
+    ) -> None:
+        super().__init__(seed)
+        self.allocation_policy = allocation_policy
+        self.allocation_floor = int(allocation_floor)
+
     def select(
         self, X_train: np.ndarray, y_train: np.ndarray, budget_ratio: float, **kwargs,
     ) -> SelectionResult:
@@ -147,7 +232,17 @@ class PhaseClassStratifiedRandomSelector(BaseSelector):
         started = time.perf_counter()
         keys = np.asarray([f"{phase}\x1f{label}" for phase, label in zip(phases, y_train)])
         strata, inverse, counts = np.unique(keys, return_inverse=True, return_counts=True)
-        quotas = allocate_largest_remainder(counts, requested, ensure_one=True)
+        try:
+            quotas = allocate_stratum_quotas(
+                counts,
+                requested,
+                policy=self.allocation_policy,
+                floor=self.allocation_floor,
+            )
+        except BudgetInfeasibleError as error:
+            return SelectionResult.failure(
+                self.method_id, "budget_infeasible", requested, str(error),
+            )
         selected: list[int] = []
         weights: list[float] = []
         for stratum_index, (capacity, quota) in enumerate(zip(counts, quotas)):
@@ -176,6 +271,8 @@ class PhaseClassStratifiedRandomSelector(BaseSelector):
                 "strata": strata.tolist(),
                 "stratum_capacities": counts.tolist(),
                 "stratum_quotas": quotas.tolist(),
+                "allocation_policy": self.allocation_policy,
+                "allocation_floor": self.allocation_floor,
                 "stratum_mass_error_max": float(np.max(np.abs(realized_mass - counts))),
                 "passes_over_train": 1.0,
                 "passes_over_train_kind": "exact_logical",

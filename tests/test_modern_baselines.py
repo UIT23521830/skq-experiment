@@ -115,6 +115,7 @@ def test_kernel_thinning_classwise_exact_budget_and_patch_log(monkeypatch, tmp_p
     X, y = _toy()
     package = types.ModuleType("goodpoints")
     kt_module = types.ModuleType("goodpoints.kt")
+    compress_module = types.ModuleType("goodpoints.compress")
 
     def thin(points, rounds, *args, **kwargs):
         del args, kwargs
@@ -122,9 +123,14 @@ def test_kernel_thinning_classwise_exact_budget_and_patch_log(monkeypatch, tmp_p
         return np.arange(0, len(points), step, dtype=np.int64)
 
     kt_module.thin = thin
+    compress_module.compresspp_kt = lambda points, *args, **kwargs: np.arange(
+        max(1, int(np.sqrt(len(points)))), dtype=np.int64,
+    )
     package.kt = kt_module
+    package.compress = compress_module
     monkeypatch.setitem(sys.modules, "goodpoints", package)
     monkeypatch.setitem(sys.modules, "goodpoints.kt", kt_module)
+    monkeypatch.setitem(sys.modules, "goodpoints.compress", compress_module)
     result = KernelThinningClasswiseSelector(tmp_path, 11).select(X, y, 0.10)
     assert result.status == "success"
     assert result.realized_rows == 12
@@ -132,7 +138,8 @@ def test_kernel_thinning_classwise_exact_budget_and_patch_log(monkeypatch, tmp_p
     assert result.diagnostics["upstream_commit"] == "goodpoints-commit"
     assert result.diagnostics["runtime_package_provenance"]["commit"] == "goodpoints-commit"
     assert result.diagnostics["adapted"] is True
-    assert result.budget_mode == "exact_classwise_prepool"
+    assert result.budget_mode == "exact_classwise_compresspp"
+    assert all(run["compresspp_candidate_rows"] >= run["quota"] for run in result.diagnostics["class_runs"])
 
 
 def test_kernel_thinning_does_not_import_unbuilt_checkout(monkeypatch, tmp_path) -> None:
@@ -158,11 +165,17 @@ def test_kernel_thinning_does_not_import_unbuilt_checkout(monkeypatch, tmp_path)
     X, y = _toy()
     package = types.ModuleType("goodpoints")
     kt_module = types.ModuleType("goodpoints.kt")
+    compress_module = types.ModuleType("goodpoints.compress")
     kt_module.thin = lambda points, rounds, *args, **kwargs: np.arange(
         0, len(points), 2 ** rounds, dtype=np.int64,
     )
     package.kt = kt_module
+    compress_module.compresspp_kt = lambda points, *args, **kwargs: np.arange(
+        max(1, int(np.sqrt(len(points)))), dtype=np.int64,
+    )
+    package.compress = compress_module
     monkeypatch.setitem(sys.modules, "goodpoints", package)
     monkeypatch.setitem(sys.modules, "goodpoints.kt", kt_module)
+    monkeypatch.setitem(sys.modules, "goodpoints.compress", compress_module)
     result = KernelThinningClasswiseSelector(tmp_path, 11).select(X, y, 0.10)
     assert result.status == "success"

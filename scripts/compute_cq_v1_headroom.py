@@ -76,6 +76,9 @@ def compute(
     fulltrain_config: Path,
     c02_configs: list[Path],
     output: Path,
+    *,
+    expected_seeds: tuple[int, ...] = HEADROOM_SEEDS,
+    protocol_id: str = "cq_v1_m0_headroom_qd12_v1",
 ) -> dict[str, Any]:
     fulltrain = ExperimentConfig.from_json(fulltrain_config)
     if fulltrain.method_ids != ("c00_full_train",) or "xgb" not in fulltrain.learner_ids:
@@ -92,15 +95,15 @@ def compute(
         config = ExperimentConfig.from_json(path)
         if config.method_ids != ("c02_stratified_random",):
             raise ValueError(f"Headroom chỉ nhận C02: {path}")
-        if config.learner_ids != ("xgb",) or config.selector_seeds != HEADROOM_SEEDS:
-            raise ValueError(f"C02 phải dùng XGB và seed 11/29/47: {path}")
+        if config.learner_ids != ("xgb",) or config.selector_seeds != expected_seeds:
+            raise ValueError(f"C02 phải dùng XGB và seed {expected_seeds}: {path}")
         if config.budget_ratio in c02_dev_ul:
             raise ValueError(f"Trùng rho={config.budget_ratio}")
         policies.add(config.class_weight_policy)
         c02_dev_ul[config.budget_ratio] = _seed_ul(
             _read_ledger(artifact_root, config.experiment_id),
             method_id="c02_stratified_random", learner_id="xgb",
-            expected_seeds=HEADROOM_SEEDS,
+            expected_seeds=expected_seeds,
         )
         config_evidence.append({
             "experiment_id": config.experiment_id,
@@ -115,6 +118,7 @@ def compute(
 
     decision = choose_headroom_budget(
         full_train_b_ul=fulltrain_values[0], c02_dev_ul=c02_dev_ul,
+        required_seeds=expected_seeds,
     )
     try:
         commit = subprocess.run(
@@ -124,7 +128,7 @@ def compute(
         commit = None
     payload = {
         **decision,
-        "protocol_id": "cq_v1_m0_headroom_qd12_v1",
+        "protocol_id": protocol_id,
         "test_data_read": False,
         "phase_aggregation": "mean_P1_P4_within_seed",
         "replicate_unit": "selector_seed",

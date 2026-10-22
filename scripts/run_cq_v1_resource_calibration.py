@@ -47,7 +47,7 @@ FIXED_METHODS = (
     "b_dataoob_official",
     "b_kernel_thinning_classwise",
 )
-CANDIDATE_METHODS = ("skq_pc", "skq_pc_lrq_sq", "skq_pc_r")
+CANDIDATE_METHODS = ("skq_pc", "skq_pc_lrq_sq", "skq_pc_sqrt")
 METHODS = FIXED_METHODS + CANDIDATE_METHODS
 
 # Hiện repo chỉ có wrapper shard thật cho P10/P11. Không selector nào trong

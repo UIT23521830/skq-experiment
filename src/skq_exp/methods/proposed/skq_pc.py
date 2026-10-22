@@ -1,12 +1,14 @@
-"""Bốn candidate SKQ-PC dùng cho vòng chọn trên dev của CQ v1.
+"""Họ candidate và ablation SKQ-PC cho vòng chọn trên dev của CQ.
 
 Trạng thái khoa học:
 
 * ``skq_pc`` là candidate chuẩn được mô tả trong Review 12/10/2026.
 * ``skq_pc_lrq_sq`` chỉ bổ sung loss OOF của Logistic Regression vào biểu diễn
   chọn mẫu; tuyệt đối không đọc dev/test khi tạo query feature.
-* ``skq_pc_r`` giữ nguyên quota, cell và QP nhưng thay kernel herding bằng lấy
-  ngẫu nhiên trong cell. Đây đồng thời là đối chứng ablation cho herding.
+* ``skq_pc_sqrt`` giữ pipeline chuẩn nhưng cấp quota phase×class tỷ lệ căn bậc
+  hai với floor 20 theo QĐ20 của Review 22/10/2026.
+* ``skq_pc_r`` giữ quota, cell và QP nhưng thay kernel herding bằng random;
+  từ Review 22/10/2026 đây là ablation A3, không còn là candidate.
 * ``x_coretab_mc_cell`` thay Gonzalez/Voronoi cell bằng leaf signature của
   CoreTab-XGB. Đây là candidate do nhóm suy luận, đang chờ giảng viên duyệt;
   không phải CoreTab native và không được đi vào freeze/test.
@@ -30,7 +32,7 @@ import numpy as np
 from ...resources import enforce_preflight, estimate_selection_cost
 from ..base import BaseSelector
 from ..contracts import BudgetInfeasibleError, exact_budget_size, validate_exact_selection
-from ..controls import allocate_largest_remainder
+from ..controls import allocate_largest_remainder, allocate_stratum_quotas
 from ..result import SelectionResult
 from .herding import kernel_herding
 from .rff import RBFRandomFeatures
@@ -59,6 +61,8 @@ class SKQPCSelector(BaseSelector):
         max_cells_per_stratum: int = 128,
         bandwidth_multiplier: float = 1.0,
         query_alpha: float = 0.5,
+        allocation_policy: str = "proportional",
+        allocation_floor: int = 20,
     ) -> None:
         super().__init__(seed)
         if variant not in self.VALID_VARIANTS:
@@ -73,6 +77,10 @@ class SKQPCSelector(BaseSelector):
         self.max_cells_per_stratum = int(max_cells_per_stratum)
         self.bandwidth_multiplier = float(bandwidth_multiplier)
         self.query_alpha = float(query_alpha)
+        self.allocation_policy = str(allocation_policy)
+        self.allocation_floor = int(allocation_floor)
+        if self.allocation_policy not in {"proportional", "sqrt_floor"}:
+            raise ValueError("allocation_policy chỉ nhận proportional hoặc sqrt_floor")
 
     def select(
         self,
@@ -313,6 +321,8 @@ class SKQPCSelector(BaseSelector):
                 "n_strata": int(len(strata)),
                 "stratum_capacities": [int(len(item.rows)) for item in strata],
                 "stratum_quotas": [int(item.quota) for item in strata],
+                "allocation_policy": self.allocation_policy,
+                "allocation_floor": self.allocation_floor,
                 "strata": stratum_diagnostics,
                 "max_cells_per_stratum_requested": self.max_cells_per_stratum,
                 "cell_count_feasibility_rule": "min(K, stratum_quota, stratum_population)",
@@ -352,15 +362,19 @@ class SKQPCSelector(BaseSelector):
             },
         )
 
-    @staticmethod
     def _build_strata(
-        phases: np.ndarray, y: np.ndarray, requested: int,
+        self, phases: np.ndarray, y: np.ndarray, requested: int,
     ) -> list[_StratumPlan]:
         keys = _phase_class_keys(phases, y)
         labels, inverse, counts = np.unique(
             keys, return_inverse=True, return_counts=True
         )
-        quotas = allocate_largest_remainder(counts, requested, ensure_one=True)
+        quotas = allocate_stratum_quotas(
+            counts,
+            requested,
+            policy=self.allocation_policy,
+            floor=self.allocation_floor,
+        )
         return [
             _StratumPlan(
                 key=str(label),

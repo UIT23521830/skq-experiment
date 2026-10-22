@@ -33,13 +33,20 @@ def test_pending_coretab_cell_candidate_is_runnable_only_as_exploratory() -> Non
 
 
 def test_three_reviewed_skq_pc_candidates_are_registered_for_dev_selection() -> None:
-    for method_id in ("skq_pc", "skq_pc_lrq_sq", "skq_pc_r"):
+    for method_id in ("skq_pc", "skq_pc_lrq_sq", "skq_pc_sqrt"):
         spec = METHOD_SPECS[method_id]
         assert spec.status == "implemented"
         assert spec.role == "proposed"
         assert spec.evidence_role == "dev_selection"
         assert spec.confirmatory_allowed is True
         assert spec.max_dev_configs == 1
+
+
+def test_skq_pc_r_is_review_1022_ablation_not_candidate() -> None:
+    spec = METHOD_SPECS["skq_pc_r"]
+    assert spec.status == "implemented"
+    assert spec.role == "ablation"
+    assert spec.evidence_role == "appendix"
 
 
 def test_c01_c03_are_controls_not_proposed_methods() -> None:

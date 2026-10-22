@@ -80,6 +80,14 @@ METHOD_SPECS = {
             note="Mốc trần dùng toàn bộ train; không phải phương pháp nén.",
         ),
         MethodSpec(
+            "c00_full_train_a", "FullTrain-A lambda=1", "reference", "evaluator_only",
+            note=(
+                "QĐ22: snapshot lambda=1 của đúng cohort train V4; học một mô hình "
+                "và đánh giá trên cùng dev P1-P4, không thuộc họ K."
+            ),
+            evidence_role="confirmatory",
+        ),
+        MethodSpec(
             "c01_uniform_random", "Uniform Random", "control", "implemented",
             fidelity_tier="local_reimplementation", task_contract="task_agnostic",
             budget_contract="exact", evidence_role="confirmatory",
@@ -333,10 +341,20 @@ METHOD_SPECS = {
             confirmatory_allowed=True, max_dev_configs=1,
         ),
         MethodSpec(
-            "skq_pc_r", "SKQ-PC-R", "proposed", "implemented",
+            "skq_pc_r", "SKQ-PC-R (A3)", "ablation", "implemented",
             note=(
                 "Candidate C/ablation: giữ phase×class, Gonzalez cell và QP, "
                 "nhưng thay kernel herding bằng random không hoàn lại trong cell."
+            ),
+            fidelity_tier="proposed", task_contract="task_agnostic",
+            budget_contract="exact", evidence_role="appendix",
+            confirmatory_allowed=True, max_dev_configs=1,
+        ),
+        MethodSpec(
+            "skq_pc_sqrt", "SKQ-PC-sqrt", "proposed", "implemented",
+            note=(
+                "Candidate C theo QĐ20 Review 22/10/2026: giữ cell, herding và QP "
+                "của SKQ-PC nhưng cấp quota phase×class theo căn bậc hai, floor 20."
             ),
             fidelity_tier="proposed", task_contract="task_agnostic",
             budget_contract="exact", evidence_role="dev_selection",
@@ -412,7 +430,11 @@ def build_selector(method_id: str, seed: int, *, n_components: int = 256, extern
     if method_id == "c01_uniform_random":
         return UniformRandomSelector(seed)
     if method_id == "c03_phase_class_random":
-        return PhaseClassStratifiedRandomSelector(seed)
+        return PhaseClassStratifiedRandomSelector(
+            seed,
+            allocation_policy=str(options.get("allocation_policy", "proportional")),
+            allocation_floor=int(options.get("allocation_floor", 20)),
+        )
     if method_id in {"n01_coretab_dt_subset", "n02_coretab_xgb_subset"}:
         return CoreTabNativeSelector(method_id, repo_root, seed, options)
     if method_id == "a_coretab_xgb_ova":
@@ -455,10 +477,13 @@ def build_selector(method_id: str, seed: int, *, n_components: int = 256, extern
             query_alpha=float(options.get("query_alpha", default_alpha)),
             budget_policy=str(options.get("budget_policy", "exact_total")),
         )
-    if method_id in {"skq_pc", "skq_pc_lrq_sq", "skq_pc_r", "x_coretab_mc_cell"}:
+    if method_id in {
+        "skq_pc", "skq_pc_lrq_sq", "skq_pc_sqrt", "skq_pc_r", "x_coretab_mc_cell",
+    }:
         variant = {
             "skq_pc": "standard",
             "skq_pc_lrq_sq": "lrq_sq",
+            "skq_pc_sqrt": "standard",
             "skq_pc_r": "random",
             "x_coretab_mc_cell": "coretab_cell",
         }[method_id]
@@ -470,6 +495,11 @@ def build_selector(method_id: str, seed: int, *, n_components: int = 256, extern
             max_cells_per_stratum=int(options.get("max_cells_per_stratum", 128)),
             bandwidth_multiplier=float(options.get("bandwidth_multiplier", 1.0)),
             query_alpha=float(options.get("query_alpha", 0.5)),
+            allocation_policy=str(options.get(
+                "allocation_policy",
+                "sqrt_floor" if method_id == "skq_pc_sqrt" else "proportional",
+            )),
+            allocation_floor=int(options.get("allocation_floor", 20)),
         )
     if method_id in {"p10_skq_mr_coretab_xgb", "p11_skq_mr_bdis"}:
         return ShardedMergeReduceSelector(

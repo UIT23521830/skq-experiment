@@ -1,4 +1,4 @@
-"""Contract tests cho bốn candidate SKQ-PC của CQ v1."""
+"""Contract tests cho candidate và ablation SKQ-PC của CQ."""
 
 from dataclasses import replace
 from pathlib import Path
@@ -34,16 +34,21 @@ def _binary_imbalanced_pool() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.nd
             },
         ),
         ("skq_pc_r", {}),
+        ("skq_pc_sqrt", {"allocation_floor": 1}),
         ("x_coretab_mc_cell", {"parent_ids": np.arange(160) % 11}),
     ],
 )
-def test_four_skq_pc_candidates_keep_exact_budget_and_stratum_mass(
+def test_skq_pc_family_keeps_exact_budget_and_stratum_mass(
     method_id: str, extra: dict,
 ) -> None:
     X, y, phases, row_ids = _binary_imbalanced_pool()
     selector = build_selector(
         method_id, 11, n_components=32,
-        options={"n_components": 32, "max_cells_per_stratum": 8},
+        options={
+            "n_components": 32,
+            "max_cells_per_stratum": 8,
+            **({"allocation_floor": 1} if method_id == "skq_pc_sqrt" else {}),
+        },
     )
     result = selector.select(
         X, y, 0.20, phases=phases, row_ids=row_ids, **extra,
@@ -61,6 +66,24 @@ def test_four_skq_pc_candidates_keep_exact_budget_and_stratum_mass(
     assert result.diagnostics["passes_over_train_kind"] == "lower_bound"
     assert all(item["qp_converged"] for item in result.diagnostics["strata"])
     assert all(item["qp_constraint_valid"] for item in result.diagnostics["strata"])
+
+
+def test_skq_pc_sqrt_uses_registered_allocation_and_rejects_infeasible_floor() -> None:
+    X, y, phases, row_ids = _binary_imbalanced_pool()
+    valid = build_selector(
+        "skq_pc_sqrt", 11, n_components=16,
+        options={"allocation_floor": 1, "max_cells_per_stratum": 4},
+    ).select(X, y, 0.20, phases=phases, row_ids=row_ids)
+    assert valid.status == "success"
+    assert valid.diagnostics["allocation_policy"] == "sqrt_floor"
+    assert valid.diagnostics["allocation_floor"] == 1
+
+    blocked = build_selector(
+        "skq_pc_sqrt", 11, n_components=16,
+        options={"allocation_floor": 20, "max_cells_per_stratum": 4},
+    ).select(X, y, 0.20, phases=phases, row_ids=row_ids)
+    assert blocked.status == "budget_infeasible"
+    assert "floor" in blocked.diagnostics["reason"]
 
 
 def test_skq_pc_random_is_reproducible_for_same_seed() -> None:

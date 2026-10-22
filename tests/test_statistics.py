@@ -25,6 +25,21 @@ def test_ul_positive_effect_favors_a_and_is_deterministic() -> None:
     assert first["effect_name"] == "delta_ul_a_minus_b"
 
 
+def test_v4_bootstrap_records_course_family_unit() -> None:
+    unit = ULUnit(
+        y_true=np.asarray([0, 1, 0, 1]),
+        pred_a=np.asarray([0, 1, 0, 1]),
+        pred_b=np.asarray([0, 0, 0, 1]),
+        course_root_id=np.asarray(["f1", "f1", "f2", "f2"]),
+        unit_id="v4",
+    )
+    result = paired_course_bootstrap_ul(
+        (unit,), labels=(0, 1), n_boot=20, seed=7,
+        resampling_unit="course_family_id",
+    )
+    assert result["resampling_unit"] == "course_family_id"
+
+
 def test_ec_positive_effect_means_a_has_lower_error() -> None:
     unit = ECUnit(
         error_a=np.full(12, 0.05),

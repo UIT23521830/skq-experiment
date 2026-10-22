@@ -352,7 +352,13 @@ class DataOOBOfficialSelector(BaseSelector):
 
 
 class KernelThinningClasswiseSelector(BaseSelector):
-    """Kernel Thinning GoodPoints theo lớp với exact-budget pre-pool công khai."""
+    """GoodPoints Compress++ theo shard/lớp, sau đó KT về exact quota.
+
+    QĐ22 không cho phép chạy KT trực tiếp trên toàn bộ lớp lớn. Mỗi lớp được
+    chia shard xác định; Compress++ chính thức tạo candidate trong từng shard;
+    candidate được gom và một lần KT cuối đưa về quota exact. Mọi adaptation
+    (quota lớp, shard và exact pre-pool) đều được ghi trong diagnostics.
+    """
 
     method_id = "b_kernel_thinning_classwise"
 
@@ -384,35 +390,95 @@ class KernelThinningClasswiseSelector(BaseSelector):
             # Import package đã được pip build từ commit khóa. Không prepend
             # checkout source vì checkout này không chứa extension ``ktc``.
             kt = importlib.import_module("goodpoints.kt")
+            compress = importlib.import_module("goodpoints.compress")
             selected: list[np.ndarray] = []
             class_runs = []
             for position, (label, capacity, quota) in enumerate(zip(labels, counts, quotas)):
                 quota = int(quota)
                 capacity = int(capacity)
-                rounds = int(math.floor(math.log2(capacity / quota))) if capacity > quota else 0
-                pool_size = quota * (2 ** rounds)
                 class_indices = np.flatnonzero(y == label)
                 class_rng = np.random.default_rng(self.seed + position)
-                prepool = np.sort(class_rng.choice(class_indices, size=pool_size, replace=False))
+                if quota == capacity:
+                    selected.append(class_indices)
+                    class_runs.append({
+                        "label": label.item() if isinstance(label, np.generic) else label,
+                        "capacity": capacity,
+                        "quota": quota,
+                        "shards": 0,
+                        "compresspp_candidate_rows": capacity,
+                        "final_prepool_rows": capacity,
+                        "halving_rounds": 0,
+                        "rbf_bandwidth": None,
+                    })
+                    continue
+
+                bandwidth = self._median_bandwidth(
+                    X[class_indices], self.seed + position,
+                )
+                candidate_multiplier = float(
+                    self.options.get("candidate_multiplier", 2.0)
+                )
+                if candidate_multiplier < 1.0:
+                    raise ValueError("candidate_multiplier phải >= 1")
+                # Mỗi Compress++ shard trả xấp xỉ sqrt(shard_size). Hệ số 4
+                # bù việc upstream hạ shard về lũy thừa bốn gần nhất.
+                shard_count = max(
+                    1,
+                    int(math.ceil(
+                        4.0 * (candidate_multiplier * quota) ** 2 / capacity
+                    )),
+                )
+                shard_count = min(shard_count, capacity)
+                permutation = class_rng.permutation(class_indices)
+                candidate_parts: list[np.ndarray] = []
+                for shard_index, shard in enumerate(np.array_split(permutation, shard_count)):
+                    if len(shard) == 0:
+                        continue
+                    local = np.asarray(compress.compresspp_kt(
+                        X[shard],
+                        b"gaussian",
+                        k_params=np.asarray([2.0 * bandwidth ** 2], dtype=np.float64),
+                        g=int(self.options.get("compresspp_g", 0)),
+                        num_bins=1,
+                        delta=float(self.options.get("delta", 0.5)),
+                        skip_swap=bool(self.options.get("skip_swap", False)),
+                        seed=self.seed + position * 100_003 + shard_index,
+                    ), dtype=np.int64)
+                    if len(local) == 0 or np.any(local < 0) or np.any(local >= len(shard)):
+                        raise RuntimeError(f"Lớp {label!r}: Compress++ trả index không hợp lệ")
+                    candidate_parts.append(shard[local])
+                candidates = np.unique(np.concatenate(candidate_parts))
+                if len(candidates) < quota:
+                    raise RuntimeError(
+                        f"Lớp {label!r}: Compress++ chỉ trả {len(candidates)} candidate, "
+                        f"quota={quota}; tăng candidate_multiplier"
+                    )
+
+                rounds = int(math.floor(math.log2(len(candidates) / quota)))
+                pool_size = quota * (2 ** rounds)
+                prepool = np.sort(class_rng.choice(candidates, size=pool_size, replace=False))
                 points = X[prepool]
-                bandwidth = self._median_bandwidth(points, self.seed + position)
 
                 def kernel(left, right, scale=bandwidth):
                     left = np.asarray(left, dtype=np.float64)
                     right = np.asarray(right, dtype=np.float64)
                     return np.exp(-np.sum((left - right) ** 2, axis=-1) / (2 * scale ** 2))
 
-                local = np.asarray(kt.thin(
-                    points,
-                    rounds,
-                    kernel,
-                    kernel,
-                    delta=float(self.options.get("delta", 0.5)),
-                    seed=self.seed + position,
-                    store_K=False,
-                    unique=True,
-                    verbose=bool(self.options.get("verbose", False)),
-                ), dtype=np.int64)
+                local = (
+                    np.arange(quota, dtype=np.int64)
+                    if rounds == 0
+                    else np.asarray(kt.thin(
+                        points,
+                        rounds,
+                        kernel,
+                        kernel,
+                        delta=float(self.options.get("delta", 0.5)),
+                        seed=self.seed + position,
+                        store_K=False,
+                        unique=True,
+                        verbose=bool(self.options.get("verbose", False)),
+                    ), dtype=np.int64)
+                )
                 if len(local) != quota:
                     raise RuntimeError(
                         f"Lớp {label!r}: GoodPoints trả {len(local)} dòng, quota={quota}"
@@ -422,7 +488,9 @@ class KernelThinningClasswiseSelector(BaseSelector):
                     "label": label.item() if isinstance(label, np.generic) else label,
                     "capacity": capacity,
                     "quota": quota,
-                    "prepool_rows": pool_size,
+                    "shards": shard_count,
+                    "compresspp_candidate_rows": int(len(candidates)),
+                    "final_prepool_rows": pool_size,
                     "halving_rounds": rounds,
                     "rbf_bandwidth": bandwidth,
                 })
@@ -444,7 +512,7 @@ class KernelThinningClasswiseSelector(BaseSelector):
             weights=np.ones(requested, dtype=np.float64),
             requested_rows=requested,
             realized_rows=requested,
-            budget_mode="exact_classwise_prepool",
+            budget_mode="exact_classwise_compresspp",
             method_id=self.method_id,
             diagnostics={
                 "adapted": True,
@@ -452,12 +520,19 @@ class KernelThinningClasswiseSelector(BaseSelector):
                 "upstream_repo": "https://github.com/microsoft/goodpoints.git",
                 "upstream_commit": upstream_commit,
                 "runtime_package_provenance": runtime_provenance,
-                "upstream_function": "goodpoints.kt.thin(store_K=False, unique=True)",
+                "upstream_function": (
+                    "goodpoints.compress.compresspp_kt per class/shard + "
+                    "goodpoints.kt.thin exact final"
+                ),
                 "declared_patches": [
                     "largest-remainder quota theo lớp",
-                    "deterministic pre-pool quota*2^m để đạt exact budget bất kỳ",
+                    "deterministic classwise shard wrapper trước Compress++",
+                    "candidate pre-pool quota*2^m trước KT cuối để đạt exact budget",
                     "RBF bandwidth median heuristic trên selector_view chuẩn hóa",
                 ],
+                "timeout_contract_seconds": int(
+                    self.options.get("timeout_seconds", 10_800)
+                ),
                 "device": "cpu",
                 "class_runs": class_runs,
             },
