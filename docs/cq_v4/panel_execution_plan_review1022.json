@@ -1,0 +1,61 @@
+{
+  "status": "PREPARED_PENDING_M0_APPROVAL_AND_QD16",
+  "data_version": "CQ V4",
+  "test_locked": true,
+  "target": "y_alpha_1",
+  "n_min": 30,
+  "delta_C": 0.01,
+  "rho_star": 0.005,
+  "selector_seeds": [
+    11,
+    29,
+    47
+  ],
+  "model_seed": 42,
+  "learner": "xgb",
+  "approval_required": [
+    "V4 split/label deviations",
+    "rho_star",
+    "n_min/delta_C",
+    "800k replacement resource workload",
+    "native CoreTab na_contract handling"
+  ],
+  "panel_config": "configs/cq_v4_panel_dev_rho005_seeds11_29_47_v1.json",
+  "native_coretab": {
+    "status": "na_contract",
+    "measured": false,
+    "reason": "binary_only"
+  },
+  "ablation_specs": [
+    {
+      "id": "C03_matched",
+      "dependency": "winner",
+      "implementation": "c03_phase_class_random allocation_policy/floor matching winner"
+    },
+    {
+      "id": "A2",
+      "dependency": "winner",
+      "status": "IMPLEMENTATION_PENDING",
+      "spec": "class-only strata, same allocation policy/floor as winner"
+    },
+    {
+      "id": "A4",
+      "dependency": "winner",
+      "status": "IMPLEMENTATION_PENDING",
+      "spec": "same selected rows; uniform weights within strata, preserve stratum mass; no QP"
+    },
+    {
+      "id": "A8",
+      "dependency": "predictions",
+      "implementation": "compute_cq_v4_dev_endpoints.py",
+      "spec": "posthoc train-prior correction; no refit"
+    },
+    {
+      "id": "A3",
+      "status": "DEFERRED_APPENDIX",
+      "method_id": "skq_pc_r"
+    }
+  ],
+  "selection_rule": "Dev comparison per QD20; if utility difference <0.002 choose cheaper eligible candidate; retain EC and per-class tradeoffs",
+  "freeze_status": "NOT_CREATED"
+}
