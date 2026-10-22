@@ -22,6 +22,7 @@ from scripts.run_cq_v1_resource_calibration import (
     _observation_payload,
     _resolve_budget_ratio,
     _stratified_indices,
+    _warmup_rows,
 )
 
 
@@ -121,6 +122,11 @@ def test_calibration_800k_workload_uses_train_only_stratified_replacement() -> N
     assert set(first) <= set(range(len(y)))
     strata = np.char.add(np.char.add(phase[first].astype(str), ":"), y[first].astype(str))
     assert set(strata) == {"P1:0", "P2:1", "P3:2"}
+
+
+def test_sqrt_warmup_budget_covers_twelve_stratum_floors() -> None:
+    assert int(_warmup_rows("skq_pc_sqrt", 50_000) * 0.005) >= 12 * 20
+    assert _warmup_rows("c02_stratified_random", 50_000) == 10_000
 
 
 def test_budget_ratio_is_read_from_locked_dev_headroom(tmp_path) -> None:

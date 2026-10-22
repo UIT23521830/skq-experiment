@@ -321,6 +321,11 @@ def _run_selector(
     )
 
 
+def _warmup_rows(method_id: str, rows: int) -> int:
+    """Warmup sqrt giữ floor 20 cho 12 tầng ở rho=0,5%, budget tối thiểu 240."""
+    return min(50_000 if method_id == "skq_pc_sqrt" else 10_000, rows)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--processed-root", default="data/processed")
@@ -406,7 +411,8 @@ def main() -> int:
                 print(f"SKIP method={method_id} rows={rows} reason=checkpoint_complete", flush=True)
                 continue
             print(f"WARMUP_START method={method_id} rows={rows}", flush=True)
-            warm_index = _stratified_indices(np.asarray(y_all), np.asarray(phase_all), min(10_000, rows), 9900 + rows)
+            warm_rows = _warmup_rows(method_id, rows)
+            warm_index = _stratified_indices(np.asarray(y_all), np.asarray(phase_all), warm_rows, 9900 + rows)
             warm_result, warm_seconds, _, _ = _peak_resources(lambda: _run_selector(
                 method_id,
                 np.asarray(X_selector_all[warm_index]), np.asarray(X_learner_all[warm_index]),
@@ -452,6 +458,7 @@ def main() -> int:
                         "rows": rows,
                         "replicate": replicate,
                         "seed": seed,
+                        "warmup_rows": warm_rows,
                         "source_train_rows": int(len(y_all)),
                         "sampling_mode": (
                             "stratified_with_replacement"
