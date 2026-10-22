@@ -1,4 +1,4 @@
-"""Tạo bảng lịch QĐ16 từ calibration 10 selector + ba candidate.
+"""Tạo bảng lịch QĐ16 từ calibration 10 selector + CoreTab OVA + ba candidate.
 
 Script không đọc dev/test. Nếu chưa có evidence thời gian train/evaluate ngoài
 selector, nó xuất PARTIAL_SELECTOR_ONLY và tuyệt đối không kết luận GO.
@@ -12,7 +12,11 @@ from pathlib import Path
 
 from skq_exp.artifacts import atomic_json
 from skq_exp.experiments.resource_schedule import compute_resource_schedule
-from scripts.run_cq_v1_resource_calibration import CANDIDATE_METHODS, FIXED_METHODS
+from scripts.run_cq_v1_resource_calibration import (
+    ADAPTED_METHODS,
+    CANDIDATE_METHODS,
+    FIXED_METHODS,
+)
 
 
 def _optional_seconds(path: str | None) -> tuple[float | None, float | None, dict | None]:
@@ -41,7 +45,7 @@ def main() -> int:
     dev_overhead, test_overhead, overhead_source = _optional_seconds(args.overhead_evidence)
     result = compute_resource_schedule(
         calibration,
-        fixed_methods=FIXED_METHODS,
+        fixed_methods=FIXED_METHODS + ADAPTED_METHODS,
         candidate_methods=CANDIDATE_METHODS,
         selector_seeds=args.selector_seeds,
         dev_nonselector_seconds=dev_overhead,

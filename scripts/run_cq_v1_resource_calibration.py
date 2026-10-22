@@ -1,10 +1,17 @@
-"""Đo QĐ16 trên train CQ v1: 50k/200k/800k, ba lần mỗi cỡ.
+"""Đo QĐ16 train-only: 50k/200k/800k, ba lần mỗi cỡ.
 
 Mỗi replicate lấy mẫu phân tầng phase×class chỉ từ train, rồi đo toàn bộ đường
 chọn của selector. Với LRQ-SQ, thời gian gồm cả tạo OOF-LR train-only vì đây là
 chi phí thực tế của selector. Script không đọc dev/test và không dùng operation
-count để loại run. Panel gồm đúng 10 selector cố định và ba candidate được
-review chấp thuận. Kết quả ghi observation thật, fit log--log và gate 3 giờ.
+count để loại run. Khi pool train nhỏ hơn 800k, workload 800k được dựng bằng
+lấy mẫu phân tầng có hoàn lại từ train và được khai báo rõ trong artifact; đây
+chỉ là workload tài nguyên, không phải thêm dữ liệu hay evidence utility.
+
+Panel Review 22/10 gồm 10 selector cố định, CoreTab-XGB OVA adapted và ba
+candidate. CoreTab-XGB native vẫn giữ đúng contract binary-only: trên CQ
+multiclass nó đo đường dựng cấu trúc nhưng trả ``na_contract``, không bị đổi tên
+thành một baseline multiclass. Kết quả ghi observation thật, fit log--log và gate
+3 giờ.
 """
 
 from __future__ import annotations
@@ -39,7 +46,7 @@ FIXED_METHODS = (
     "c01_uniform_random",
     "c02_stratified_random",
     "c03_phase_class_random",
-    "a_coretab_xgb_ova",
+    "n02_coretab_xgb_subset",
     "n_bdis_native",
     "n_gcoreset_benchmark",
     "b_moderate_ds_adapted",
@@ -47,8 +54,9 @@ FIXED_METHODS = (
     "b_dataoob_official",
     "b_kernel_thinning_classwise",
 )
+ADAPTED_METHODS = ("a_coretab_xgb_ova",)
 CANDIDATE_METHODS = ("skq_pc", "skq_pc_lrq_sq", "skq_pc_sqrt")
-METHODS = FIXED_METHODS + CANDIDATE_METHODS
+METHODS = FIXED_METHODS + ADAPTED_METHODS + CANDIDATE_METHODS
 
 # Hiện repo chỉ có wrapper shard thật cho P10/P11. Không selector nào trong
 # panel QĐ16 được tự gắn nhãn shardable chỉ vì có thể chia mảng đầu vào.
@@ -246,10 +254,29 @@ def _resolve_budget_ratio(explicit: float | None, headroom: str | None) -> tuple
 
 
 def _stratified_indices(y: np.ndarray, phase: np.ndarray, rows: int, seed: int) -> np.ndarray:
-    if rows >= len(y):
+    """Lấy workload phase×class; chỉ dùng replacement khi rows vượt pool train."""
+    if rows == len(y):
         return np.arange(len(y), dtype=np.int64)
     strata = np.char.add(np.char.add(phase.astype(str), ":"), y.astype(str))
     all_index = np.arange(len(y), dtype=np.int64)
+    if rows > len(y):
+        rng = np.random.default_rng(seed)
+        labels, counts = np.unique(strata, return_counts=True)
+        raw = counts.astype(np.float64) * (float(rows) / float(len(y)))
+        quotas = np.floor(raw).astype(np.int64)
+        remainder = int(rows - int(quotas.sum()))
+        if remainder:
+            order = np.lexsort((labels.astype(str), -(raw - quotas)))
+            quotas[order[:remainder]] += 1
+        selected = []
+        for label, quota in zip(labels, quotas, strict=True):
+            members = all_index[strata == label]
+            selected.append(rng.choice(members, size=int(quota), replace=True))
+        result = np.concatenate(selected).astype(np.int64, copy=False)
+        rng.shuffle(result)
+        if len(result) != rows:
+            raise RuntimeError(f"Sai kích thước workload replacement: {len(result)} != {rows}")
+        return result
     selected, _ = train_test_split(
         all_index, train_size=rows, random_state=seed, shuffle=True, stratify=strata,
     )
@@ -323,10 +350,10 @@ def main() -> int:
     X_selector_all = np.load(data_root / "X_selector_train.npy", mmap_mode="r")
     y_all = np.load(data_root / "y_train.npy", mmap_mode="r")
     phase_all = np.load(data_root / "phase_train.npy", mmap_mode="r")
-    if len(X_learner_all) != len(X_selector_all) or len(X_learner_all) < max(CALIBRATION_ROWS):
+    if len(X_learner_all) != len(X_selector_all) or len(X_learner_all) < min(CALIBRATION_ROWS):
         raise ValueError(
             f"Pool learner/selector không hợp lệ: {len(X_learner_all):,}/{len(X_selector_all):,}; "
-            f"cần ít nhất {max(CALIBRATION_ROWS):,}"
+            f"cần ít nhất {min(CALIBRATION_ROWS):,}"
         )
     gpu_name, vram_bytes, gpu_count = _gpu()
     selector_device = "cuda" if gpu_count else "cpu"
@@ -425,6 +452,13 @@ def main() -> int:
                         "rows": rows,
                         "replicate": replicate,
                         "seed": seed,
+                        "source_train_rows": int(len(y_all)),
+                        "sampling_mode": (
+                            "stratified_with_replacement"
+                            if rows > len(y_all)
+                            else "stratified_without_replacement"
+                        ),
+                        "synthetic_workload_only": bool(rows > len(y_all)),
                         "status": result.status,
                         "requested_rows": result.requested_rows,
                         "realized_rows": result.realized_rows,
@@ -460,9 +494,17 @@ def main() -> int:
         "budget_ratio": budget_ratio,
         "budget_source": budget_source,
         "target_rows": int(len(X_learner_all)),
+        "source_train_rows": int(len(X_learner_all)),
+        "calibration_sampling_policy": {
+            "strata": "phase_x_class",
+            "without_replacement_up_to_source_rows": True,
+            "with_replacement_above_source_rows": True,
+            "purpose": "resource_workload_only_not_utility_evidence",
+        },
         "selector_feature_count": int(X_selector_all.shape[1]),
         "learner_feature_count": int(X_learner_all.shape[1]),
         "fixed_methods": list(FIXED_METHODS),
+        "adapted_methods": list(ADAPTED_METHODS),
         "candidate_methods": list(CANDIDATE_METHODS),
         "expected_method_count": len(METHODS),
         "measured_method_count": len(all_results),

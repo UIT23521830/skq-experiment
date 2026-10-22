@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+import numpy as np
+
 from skq_exp.experiments.resource_calibration import (
     CALIBRATION_ROWS,
     CalibrationObservation,
@@ -12,11 +14,14 @@ from skq_exp.experiments.resource_calibration import (
     gate_decision,
 )
 from scripts.run_cq_v1_resource_calibration import (
+    ADAPTED_METHODS,
     CANDIDATE_METHODS,
     FIXED_METHODS,
+    METHODS,
     _load_observations,
     _observation_payload,
     _resolve_budget_ratio,
+    _stratified_indices,
 )
 
 
@@ -98,10 +103,24 @@ def test_resource_checkpoint_round_trip_and_rejects_other_environment(tmp_path) 
         raise AssertionError("Checkpoint không được trộn environment")
 
 
-def test_qd16_panel_has_exactly_ten_fixed_and_three_candidates() -> None:
+def test_qd16_panel_has_ten_fixed_one_adapted_and_three_candidates() -> None:
     assert len(FIXED_METHODS) == 10
+    assert ADAPTED_METHODS == ("a_coretab_xgb_ova",)
     assert len(CANDIDATE_METHODS) == 3
-    assert len(set(FIXED_METHODS + CANDIDATE_METHODS)) == 13
+    assert len(METHODS) == 14
+    assert len(set(METHODS)) == 14
+
+
+def test_calibration_800k_workload_uses_train_only_stratified_replacement() -> None:
+    y = np.asarray([0, 0, 1, 1, 2, 2])
+    phase = np.asarray(["P1", "P1", "P2", "P2", "P3", "P3"])
+    first = _stratified_indices(y, phase, 60, seed=42)
+    second = _stratified_indices(y, phase, 60, seed=42)
+    assert np.array_equal(first, second)
+    assert len(first) == 60
+    assert set(first) <= set(range(len(y)))
+    strata = np.char.add(np.char.add(phase[first].astype(str), ":"), y[first].astype(str))
+    assert set(strata) == {"P1:0", "P2:1", "P3:2"}
 
 
 def test_budget_ratio_is_read_from_locked_dev_headroom(tmp_path) -> None:
